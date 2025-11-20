@@ -1,0 +1,6 @@
+<svg width="140" height="50" viewBox="0 0 140 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="140" height="50" rx="6" fill="#FF6B00"/>
+  <path d="M20 25L15 20L15 30L20 25Z" fill="white" opacity="0.9"/>
+  <circle cx="25" cy="25" r="6" fill="white" opacity="0.9"/>
+  <text x="38" y="32" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="white">Ameria</text>
+</svg>

@@ -1,0 +1,6 @@
+<svg width="140" height="50" viewBox="0 0 140 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="140" height="50" rx="6" fill="#E31E24"/>
+  <rect x="15" y="15" width="20" height="20" rx="3" fill="white" opacity="0.9"/>
+  <path d="M20 20L30 20M20 25L30 25M20 30L30 30" stroke="#E31E24" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="42" y="32" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="white">ArCa</text>
+</svg>

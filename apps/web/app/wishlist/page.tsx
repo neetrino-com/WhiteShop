@@ -1,0 +1,353 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { Button } from '@shop/ui';
+import { apiClient } from '../../lib/api-client';
+import { formatPrice, getStoredCurrency } from '../../lib/currency';
+import { getStoredLanguage } from '../../lib/language';
+import { getTranslation } from '../../lib/translations';
+import { useAuth } from '../../lib/auth/AuthContext';
+
+interface Product {
+  id: string;
+  slug: string;
+  title: string;
+  price: number;
+  compareAtPrice: number | null;
+  image: string | null;
+  inStock: boolean;
+  brand: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+const WISHLIST_KEY = 'shop_wishlist';
+
+function getWishlist(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const stored = localStorage.getItem(WISHLIST_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+export default function WishlistPage() {
+  const router = useRouter();
+  const { isLoggedIn } = useAuth();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [wishlistIds, setWishlistIds] = useState<string[]>([]);
+  const [language, setLanguage] = useState(getStoredLanguage());
+  const [currency, setCurrency] = useState(getStoredCurrency());
+  const [addingToCart, setAddingToCart] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Get wishlist IDs from localStorage
+    const ids = getWishlist();
+    setWishlistIds(ids);
+
+    if (ids.length === 0) {
+      setLoading(false);
+      return;
+    }
+
+    // Fetch products by IDs
+    async function fetchProducts() {
+      try {
+        setLoading(true);
+        // Fetch all products and filter by wishlist IDs
+        const language = getStoredLanguage();
+        const response = await apiClient.get<{
+          data: Product[];
+          meta: {
+            total: number;
+            page: number;
+            limit: number;
+            totalPages: number;
+          };
+        }>('/api/v1/products', {
+          params: {
+            limit: '1000', // Get all products to filter
+            lang: language,
+          },
+        });
+
+        // Filter products that are in wishlist
+        const wishlistProducts = response.data.filter((product) =>
+          ids.includes(product.id)
+        );
+        setProducts(wishlistProducts);
+      } catch (error) {
+        console.error('Error fetching wishlist products:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchProducts();
+
+    // Listen for wishlist updates
+    const handleWishlistUpdate = () => {
+      const updatedIds = getWishlist();
+      setWishlistIds(updatedIds);
+      if (updatedIds.length === 0) {
+        setProducts([]);
+      } else {
+        // Re-fetch if needed
+        fetchProducts();
+      }
+    };
+
+    const handleLanguageUpdate = () => {
+      setLanguage(getStoredLanguage());
+    };
+
+    const handleCurrencyUpdate = () => {
+      setCurrency(getStoredCurrency());
+    };
+
+    window.addEventListener('wishlist-updated', handleWishlistUpdate);
+    window.addEventListener('language-updated', handleLanguageUpdate);
+    window.addEventListener('currency-updated', handleCurrencyUpdate);
+    return () => {
+      window.removeEventListener('wishlist-updated', handleWishlistUpdate);
+      window.removeEventListener('language-updated', handleLanguageUpdate);
+      window.removeEventListener('currency-updated', handleCurrencyUpdate);
+    };
+  }, []);
+
+  const handleRemove = (productId: string) => {
+    const updatedIds = wishlistIds.filter((id) => id !== productId);
+    localStorage.setItem(WISHLIST_KEY, JSON.stringify(updatedIds));
+    setWishlistIds(updatedIds);
+    setProducts(products.filter((p) => p.id !== productId));
+    window.dispatchEvent(new Event('wishlist-updated'));
+  };
+
+  const handleAddToCart = async (product: Product) => {
+    if (!product.inStock) {
+      return;
+    }
+
+    if (!isLoggedIn) {
+      router.push(`/login?redirect=/wishlist`);
+      return;
+    }
+
+    setAddingToCart(prev => new Set(prev).add(product.id));
+
+    try {
+      // Get product details to get variant ID
+      interface ProductDetails {
+        id: string;
+        variants?: Array<{
+          id: string;
+          sku: string;
+          price: number;
+          stock: number;
+          available: boolean;
+        }>;
+      }
+
+      const productDetails = await apiClient.get<ProductDetails>(`/api/v1/products/${product.slug}`);
+
+      if (!productDetails.variants || productDetails.variants.length === 0) {
+        alert('No variants available');
+        return;
+      }
+
+      const variantId = productDetails.variants[0].id;
+      
+      await apiClient.post(
+        '/api/v1/cart/items',
+        {
+          productId: product.id,
+          variantId: variantId,
+          quantity: 1,
+        }
+      );
+
+      // Trigger cart update event
+      window.dispatchEvent(new Event('cart-updated'));
+    } catch (error: any) {
+      console.error('Error adding to cart:', error);
+      if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+        router.push(`/login?redirect=/wishlist`);
+      } else {
+        alert('Failed to add to cart');
+      }
+    } finally {
+      setAddingToCart(prev => {
+        const next = new Set(prev);
+        next.delete(product.id);
+        return next;
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-8"></div>
+          <div className="h-64 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <h1 className="text-3xl font-bold text-gray-900 mb-8">{getTranslation('wishlist.title', language)}</h1>
+
+      {products.length > 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          {/* Table Header */}
+          <div className="hidden md:grid md:grid-cols-12 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <div className="md:col-span-5">
+              <span className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Product name</span>
+            </div>
+            <div className="md:col-span-2 text-center">
+              <span className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Unit price</span>
+            </div>
+            <div className="md:col-span-2 text-center">
+              <span className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Stock status</span>
+            </div>
+            <div className="md:col-span-3 text-center">
+              <span className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Action</span>
+            </div>
+          </div>
+
+          {/* Table Body */}
+          <div className="divide-y divide-gray-200">
+            {products.map((product) => (
+              <div
+                key={product.id}
+                className="grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-6 hover:bg-gray-50 transition-colors"
+              >
+                {/* Product Name */}
+                <div className="md:col-span-5 flex items-center gap-4">
+                  <Link
+                    href={`/products/${product.slug}`}
+                    className="w-20 h-20 bg-gray-100 rounded-lg flex-shrink-0 relative overflow-hidden"
+                  >
+                    {product.image ? (
+                      <Image
+                        src={product.image}
+                        alt={product.title}
+                        fill
+                        className="object-cover"
+                        sizes="80px"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                        <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                    )}
+                  </Link>
+                  <div className="flex-1 min-w-0">
+                    <Link
+                      href={`/products/${product.slug}`}
+                      className="text-base font-medium text-gray-900 hover:text-blue-600 transition-colors line-clamp-2"
+                    >
+                      {product.title}
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Unit Price */}
+                <div className="md:col-span-2 flex items-center justify-center md:justify-start">
+                  <div className="flex flex-col">
+                    <span className="text-base font-semibold text-blue-600">
+                      {formatPrice(product.price, currency)}
+                    </span>
+                    {product.compareAtPrice && product.compareAtPrice > product.price && (
+                      <span className="text-sm text-gray-400 line-through">
+                        {formatPrice(product.compareAtPrice, currency)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stock Status */}
+                <div className="md:col-span-2 flex items-center justify-center">
+                  {product.inStock ? (
+                    <span className="text-sm font-medium text-green-600 flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                      {getTranslation('stock.inStock', language)}
+                    </span>
+                  ) : (
+                    <span className="text-sm font-medium text-red-600">
+                      {getTranslation('stock.outOfStock', language)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Action */}
+                <div className="md:col-span-3 flex items-center justify-center gap-3">
+                  <Button
+                    variant="primary"
+                    onClick={() => handleAddToCart(product)}
+                    disabled={!product.inStock || addingToCart.has(product.id)}
+                    className="bg-green-600 hover:bg-green-700 text-white rounded-md px-4 py-2 font-semibold uppercase text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {addingToCart.has(product.id) ? 'Adding...' : 'ADD TO CART'}
+                  </Button>
+                  <button
+                    onClick={() => handleRemove(product.id)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+                    aria-label="Remove from wishlist"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-16">
+          <div className="max-w-md mx-auto">
+            <svg
+              className="mx-auto h-24 w-24 text-gray-400 mb-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+              />
+            </svg>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              {getTranslation('wishlist.empty', language)}
+            </h2>
+            <p className="text-gray-600 mb-6">
+              {getTranslation('wishlist.emptyDescription', language)}
+            </p>
+            <Link href="/products">
+              <Button variant="primary" size="lg">
+                {getTranslation('wishlist.browseProducts', language)}
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,6 @@
+<svg width="140" height="50" viewBox="0 0 140 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="140" height="50" rx="6" fill="#0066CC"/>
+  <circle cx="25" cy="25" r="8" fill="white" opacity="0.9"/>
+  <path d="M25 20L25 30M20 25L30 25" stroke="#0066CC" stroke-width="2" stroke-linecap="round"/>
+  <text x="40" y="32" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="white">Idram</text>
+</svg>
