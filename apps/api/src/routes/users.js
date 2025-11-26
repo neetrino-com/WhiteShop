@@ -3,6 +3,9 @@ const router = express.Router();
 const usersController = require('../controllers/usersController');
 const { authenticateToken } = require('../middleware/auth');
 
+// GET /api/v1/users/dashboard - Get user dashboard statistics
+router.get('/dashboard', authenticateToken, usersController.getDashboard);
+
 // GET /api/v1/users/profile - Get user profile
 router.get('/profile', authenticateToken, usersController.getProfile);
 

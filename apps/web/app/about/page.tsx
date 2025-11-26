@@ -1,47 +1,95 @@
+import Image from 'next/image';
+import { TeamCarousel } from '../../components/TeamCarousel';
+
 export const dynamic = 'force-dynamic';
 export const dynamicParams = true;
 
+/**
+ * Страница About Us
+ * Содержит две основные секции:
+ * 1. About our online store - информация о магазине с изображением
+ * 2. Our Team - карусель с членами команды
+ */
 export default function AboutPage() {
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h1 className="text-4xl font-bold text-gray-900 mb-6">About Us</h1>
-      
-      <div className="prose prose-lg max-w-none">
-        <section className="mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Our Story</h2>
-          <p className="text-gray-600 mb-4">
-            Welcome to Shop, your trusted destination for quality products and exceptional service. 
-            We've been serving customers since 2020, providing a seamless shopping experience 
-            that combines convenience, quality, and value.
-          </p>
-          <p className="text-gray-600">
-            Our mission is to make shopping easy, enjoyable, and accessible for everyone. 
-            We carefully curate our product selection to ensure you always find something 
-            that meets your needs and exceeds your expectations.
-          </p>
-        </section>
+    <div className="min-h-screen bg-white">
+      {/* Секция: About our online store */}
+      <section className="py-16 md:py-24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            {/* Изображение слева */}
+            <div className="relative w-full h-[400px] md:h-[500px] lg:h-[600px] rounded-lg overflow-hidden shadow-lg">
+              <Image
+                src="https://images.pexels.com/photos/3184357/pexels-photo-3184357.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2"
+                alt="Our team working together"
+                fill
+                className="object-cover"
+                priority
+                unoptimized
+              />
+            </div>
 
-        <section className="mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Our Values</h2>
-          <ul className="list-disc list-inside text-gray-600 space-y-2">
-            <li>Quality: We only sell products we believe in</li>
-            <li>Customer Service: Your satisfaction is our priority</li>
-            <li>Transparency: Honest pricing and clear policies</li>
-            <li>Innovation: Constantly improving your shopping experience</li>
-          </ul>
-        </section>
+            {/* Текст справа */}
+            <div className="space-y-6">
+              {/* Подзаголовок */}
+              <p className="text-sm md:text-base font-semibold uppercase tracking-wider text-[#7CB342]">
+                SEEMINGLY ELEGANT DESIGN
+              </p>
 
-        <section>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Contact Us</h2>
-          <p className="text-gray-600">
-            Have questions? We'd love to hear from you. 
-            <a href="/contact" className="text-blue-600 hover:underline ml-1">
-              Get in touch with our team
-            </a>
-          </p>
-        </section>
-      </div>
+              {/* Заголовок */}
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight">
+                About our online store
+              </h1>
+
+              {/* Текст */}
+              <div className="space-y-4 text-gray-600 text-base md:text-lg leading-relaxed">
+                <p>
+                  Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor 
+                  incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud 
+                  exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+                </p>
+                <p>
+                  Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu 
+                  fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in 
+                  culpa qui officia deserunt mollit anim id est laborum.
+                </p>
+                <p>
+                  Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque 
+                  laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi 
+                  architecto beatae vitae dicta sunt explicabo.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Секция: Our Team */}
+      <section className="py-16 md:py-24 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            {/* Подзаголовок */}
+            <p className="text-sm md:text-base font-semibold uppercase tracking-wider text-[#7CB342] mb-4">
+              WORDS ABOUT US
+            </p>
+
+            {/* Заголовок */}
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4">
+              Our Team
+            </h2>
+
+            {/* Описание */}
+            <p className="text-gray-600 text-base md:text-lg max-w-2xl mx-auto">
+              Curvallis ulemperatuurimatikamobor.sal.
+            </p>
+          </div>
+
+          {/* Карусель команды */}
+          <div className="max-w-6xl mx-auto">
+            <TeamCarousel />
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
-

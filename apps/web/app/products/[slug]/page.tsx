@@ -3,13 +3,13 @@
 import { useState, useEffect, use, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Button } from '@shop/ui';
 import { apiClient } from '../../../lib/api-client';
 import { formatPrice, getStoredCurrency } from '../../../lib/currency';
 import { getStoredLanguage } from '../../../lib/language';
 import { useAuth } from '../../../lib/auth/AuthContext';
 import { RelatedProducts } from '../../../components/RelatedProducts';
 import { ProductReviews } from '../../../components/ProductReviews';
+import { Heart, GitCompare, Minus, Plus } from 'lucide-react';
 
 interface ProductPageProps {
   params: Promise<{ slug?: string }>;
@@ -36,6 +36,14 @@ interface ProductVariant {
   options: VariantOption[];
 }
 
+interface ProductLabel {
+  id: string;
+  type: 'text' | 'percentage';
+  value: string;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  color: string | null;
+}
+
 interface Product {
   id: string;
   slug: string;
@@ -44,6 +52,7 @@ interface Product {
   description?: string;
   media: ProductMedia[] | string[];
   variants: ProductVariant[];
+  labels?: ProductLabel[];
   brand?: {
     id: string;
     name: string;
@@ -60,6 +69,7 @@ interface Product {
 const RESERVED_ROUTES = ['admin', 'login', 'register', 'cart', 'checkout', 'profile', 'orders', 'wishlist', 'compare', 'categories', 'products', 'about', 'contact', 'delivery', 'shipping', 'returns', 'faq', 'support', 'stores', 'privacy', 'terms', 'cookies'];
 
 const WISHLIST_KEY = 'shop_wishlist';
+const COMPARE_KEY = 'shop_compare';
 
 export default function ProductPage({ params }: ProductPageProps) {
   const router = useRouter();
@@ -77,6 +87,8 @@ export default function ProductPage({ params }: ProductPageProps) {
   const [thumbnailStartIndex, setThumbnailStartIndex] = useState(0);
   const [showZoom, setShowZoom] = useState(false);
   const [isInWishlist, setIsInWishlist] = useState(false);
+  const [isInCompare, setIsInCompare] = useState(false);
+  const [quantity, setQuantity] = useState(1);
   const thumbnailsPerView = 3;
   // Helper function to get color hex/rgb from color name
   const getColorValue = (colorName: string): string => {
@@ -207,6 +219,30 @@ export default function ProductPage({ params }: ProductPageProps) {
     };
   }, [product?.id]);
 
+  // Check compare status
+  useEffect(() => {
+    if (!product) return;
+
+    const checkCompare = () => {
+      if (typeof window === 'undefined') return;
+      try {
+        const stored = localStorage.getItem(COMPARE_KEY);
+        const compare = stored ? JSON.parse(stored) : [];
+        setIsInCompare(compare.includes(product.id));
+      } catch {
+        setIsInCompare(false);
+      }
+    };
+
+    checkCompare();
+    const handleCompareUpdate = () => checkCompare();
+    window.addEventListener('compare-updated', handleCompareUpdate);
+
+    return () => {
+      window.removeEventListener('compare-updated', handleCompareUpdate);
+    };
+  }, [product?.id]);
+
   // Debug: log images to console - moved before early returns to maintain hooks order
   useEffect(() => {
     if (product) {
@@ -297,61 +333,9 @@ export default function ProductPage({ params }: ProductPageProps) {
     return extracted;
   })() : [];
 
-  // Auto-scroll thumbnails when main image changes
-  useEffect(() => {
-    if (images.length > thumbnailsPerView) {
-      if (currentImageIndex < thumbnailStartIndex) {
-        setThumbnailStartIndex(currentImageIndex);
-      } else if (currentImageIndex >= thumbnailStartIndex + thumbnailsPerView) {
-        setThumbnailStartIndex(currentImageIndex - thumbnailsPerView + 1);
-      }
-    }
-  }, [currentImageIndex, images.length, thumbnailStartIndex, thumbnailsPerView]);
-
-  // Early return if slug is a reserved route (redirecting)
-  if (RESERVED_ROUTES.includes(slug.toLowerCase())) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
-          <p className="text-gray-600">Redirecting...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="animate-pulse">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-            <div className="aspect-square bg-gray-200 rounded-lg"></div>
-            <div className="space-y-4">
-              <div className="h-8 bg-gray-200 rounded w-3/4"></div>
-              <div className="h-6 bg-gray-200 rounded w-1/4"></div>
-              <div className="h-4 bg-gray-200 rounded w-full"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!product) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Product not found</h1>
-          <p className="text-gray-600">The product you're looking for doesn't exist.</p>
-        </div>
-      </div>
-    );
-  }
-
-
   // Group variants by color
   const colorGroups: Array<{ color: string; stock: number; variants: ProductVariant[] }> = [];
-  if (product.variants && product.variants.length > 0) {
+  if (product?.variants && product.variants.length > 0) {
     const colorMap = new Map<string, ProductVariant[]>();
     
     product.variants.forEach(variant => {
@@ -378,7 +362,7 @@ export default function ProductPage({ params }: ProductPageProps) {
 
   // Group variants by size
   const sizeGroups: Array<{ size: string; stock: number; variants: ProductVariant[] }> = [];
-  if (product.variants && product.variants.length > 0) {
+  if (product?.variants && product.variants.length > 0) {
     const sizeMap = new Map<string, ProductVariant[]>();
     
     product.variants.forEach(variant => {
@@ -405,9 +389,67 @@ export default function ProductPage({ params }: ProductPageProps) {
 
 
   // Get current variant
-  const currentVariant = selectedVariant || findVariantByColorAndSize(selectedColor, selectedSize) || product.variants?.[0] || null;
+  const currentVariant = selectedVariant || findVariantByColorAndSize(selectedColor, selectedSize) || product?.variants?.[0] || null;
   const price = currentVariant?.price || 0;
   const compareAtPrice = currentVariant?.compareAtPrice;
+  const maxQuantity = currentVariant?.stock && currentVariant.stock > 0 ? currentVariant.stock : 1;
+  const isOutOfStock = !currentVariant || currentVariant.stock === 0;
+
+  useEffect(() => {
+    if (!currentVariant || currentVariant.stock <= 0) {
+      setQuantity(1);
+      return;
+    }
+    setQuantity(prev => {
+      if (prev > currentVariant.stock) {
+        return currentVariant.stock;
+      }
+      if (prev < 1) {
+        return 1;
+      }
+      return prev;
+    });
+  }, [currentVariant?.id, currentVariant?.stock]);
+
+  /**
+   * Adjusts product quantity while respecting stock limits.
+   */
+  const adjustQuantity = (delta: number) => {
+    if (isOutOfStock) {
+      console.warn('[ProductPage] Քանակը չի փոխվում, քանի որ ապրանքը հասանելի չէ');
+      return;
+    }
+
+    setQuantity(prev => {
+      const next = prev + delta;
+      if (next < 1) return 1;
+      if (next > maxQuantity) return maxQuantity;
+      return next;
+    });
+  };
+
+  // Auto-scroll thumbnails when main image changes
+  useEffect(() => {
+    if (images.length > thumbnailsPerView) {
+      if (currentImageIndex < thumbnailStartIndex) {
+        setThumbnailStartIndex(currentImageIndex);
+      } else if (currentImageIndex >= thumbnailStartIndex + thumbnailsPerView) {
+        setThumbnailStartIndex(currentImageIndex - thumbnailsPerView + 1);
+      }
+    }
+  }, [currentImageIndex, images.length, thumbnailStartIndex, thumbnailsPerView]);
+
+  // Early return if slug is a reserved route (redirecting)
+  if (RESERVED_ROUTES.includes(slug.toLowerCase())) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
+          <p className="text-gray-600">Redirecting...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Handle color selection
   const handleColorSelect = (color: string) => {
@@ -462,6 +504,44 @@ export default function ProductPage({ params }: ProductPageProps) {
     }
   };
 
+const handleCompareToggle = (e: React.MouseEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  if (!product) return;
+  if (typeof window === 'undefined') return;
+  
+  try {
+    const stored = localStorage.getItem(COMPARE_KEY);
+    const compare: string[] = stored ? JSON.parse(stored) : [];
+    
+    if (isInCompare) {
+      const updated = compare.filter((id) => id !== product.id);
+      localStorage.setItem(COMPARE_KEY, JSON.stringify(updated));
+      setIsInCompare(false);
+      setShowMessage('Removed from compare');
+      setTimeout(() => setShowMessage(null), 2000);
+    } else {
+      if (compare.length >= 4) {
+        setShowMessage('Compare list is full');
+        setTimeout(() => setShowMessage(null), 2000);
+        return;
+      }
+      compare.push(product.id);
+      localStorage.setItem(COMPARE_KEY, JSON.stringify(compare));
+      setIsInCompare(true);
+      setShowMessage('Added to compare');
+      setTimeout(() => setShowMessage(null), 2000);
+    }
+    
+    window.dispatchEvent(new Event('compare-updated'));
+  } catch (error) {
+    console.error('Error updating compare list:', error);
+    setShowMessage('Failed to update compare');
+    setTimeout(() => setShowMessage(null), 3000);
+  }
+};
+
   // Handle thumbnail navigation
   const handleThumbnailUp = () => {
     if (thumbnailStartIndex > 0) {
@@ -477,6 +557,39 @@ export default function ProductPage({ params }: ProductPageProps) {
 
   // Get visible thumbnails
   const visibleThumbnails = images.slice(thumbnailStartIndex, thumbnailStartIndex + thumbnailsPerView);
+
+  if (loading || !product) {
+    return (
+      <div
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex flex-col lg:flex-row gap-10 animate-pulse">
+          <div className="flex-1 space-y-4">
+            <div className="h-96 bg-gray-100 rounded-2xl" />
+            <div className="grid grid-cols-3 gap-3">
+              <div className="h-24 bg-gray-100 rounded-xl" />
+              <div className="h-24 bg-gray-100 rounded-xl" />
+              <div className="h-24 bg-gray-100 rounded-xl" />
+            </div>
+          </div>
+          <div className="flex-1 space-y-6">
+            <div className="h-8 bg-gray-100 rounded w-2/3" />
+            <div className="h-6 bg-gray-100 rounded w-1/2" />
+            <div className="h-10 bg-gray-100 rounded w-1/3" />
+            <div className="space-y-3">
+              <div className="h-12 bg-gray-100 rounded-xl" />
+              <div className="h-12 bg-gray-100 rounded-xl" />
+            </div>
+          </div>
+        </div>
+        <p className="mt-8 text-center text-gray-500 font-medium">
+          Ապրանքի տվյալները բեռնվում են…
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -571,10 +684,55 @@ export default function ProductPage({ params }: ProductPageProps) {
                 priority
                 unoptimized
               />
+                  
+                  {/* Product Labels */}
+                  {product.labels && product.labels.length > 0 && (
+                    <div className="absolute inset-0 pointer-events-none z-20">
+                      {product.labels.map((label) => {
+                        const positionStyles = {
+                          'top-left': 'top-4 left-4',
+                          'top-right': 'top-4 right-4',
+                          'bottom-left': 'bottom-4 left-4',
+                          'bottom-right': 'bottom-4 right-4',
+                        };
+                        
+                        let colorStyle = '';
+                        if (label.color) {
+                          colorStyle = `background-color: ${label.color}; color: white;`;
+                        } else {
+                          if (label.type === 'percentage') {
+                            colorStyle = 'bg-red-600 text-white';
+                          } else {
+                            const value = label.value.toLowerCase();
+                            if (value.includes('new') || value.includes('նոր')) {
+                              colorStyle = 'bg-green-600 text-white';
+                            } else if (value.includes('hot') || value.includes('տաք')) {
+                              colorStyle = 'bg-orange-600 text-white';
+                            } else if (value.includes('sale') || value.includes('զեղչ')) {
+                              colorStyle = 'bg-red-600 text-white';
+                            } else {
+                              colorStyle = 'bg-blue-600 text-white';
+                            }
+                          }
+                        }
+                        
+                        return (
+                          <div
+                            key={label.id}
+                            className={`absolute z-20 px-3 py-1.5 text-sm font-bold rounded-md ${positionStyles[label.position]} ${!label.color ? colorStyle : ''}`}
+                            style={label.color ? { backgroundColor: label.color, color: 'white' } : undefined}
+                          >
+                            {label.type === 'percentage' ? `${label.value}%` : label.value}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  
                   {/* Zoom Button */}
                   <button
                     onClick={() => setShowZoom(true)}
-                    className="absolute bottom-4 right-4 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors opacity-0 group-hover:opacity-100"
+                    className="absolute bottom-4 right-4 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center hover:bg-gray-50 transition-colors opacity-0 group-hover:opacity-100 z-10"
                     aria-label="Zoom image"
                   >
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -622,13 +780,13 @@ export default function ProductPage({ params }: ProductPageProps) {
 
         {/* Details */}
         <div>
-          {product.brand && (
+          {product?.brand && (
             <p className="text-sm text-gray-500 mb-2">{product.brand.name}</p>
           )}
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
             {product.title}
           </h1>
-          {product.subtitle && (
+          {product?.subtitle && (
             <p className="text-lg text-gray-600 mb-4">{product.subtitle}</p>
           )}
           <div className="flex items-center gap-3 mb-6">
@@ -642,209 +800,304 @@ export default function ProductPage({ params }: ProductPageProps) {
             )}
           </div>
           
-          {product.description && (
+          {product?.description && (
             <div 
               className="text-gray-600 mb-8 prose prose-sm max-w-none"
               dangerouslySetInnerHTML={{ __html: product.description }}
             />
           )}
 
-          {/* Color Selector */}
-          {colorGroups.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wide">
-                Գույն
-              </h3>
-              <div className="flex flex-wrap gap-3">
-                {colorGroups.map((group) => {
-                  const isSelected = selectedColor === group.color;
-                  const colorName = group.color;
-                  const colorValue = getColorValue(colorName);
-                  
-                  // Check if this color has available variants with selected size
-                  const availableVariants = selectedSize
-                    ? group.variants.filter(v => {
-                        const hasSize = v.options?.some(opt => opt.key === 'size' && opt.value === selectedSize);
-                        return hasSize && v.stock > 0;
-                      })
-                    : group.variants.filter(v => v.stock > 0);
-                  
-                  const isDisabled = availableVariants.length === 0 && selectedSize !== null;
-                  
-                  return (
-                    <button
-                      key={group.color}
-                      type="button"
-                      onClick={() => {
-                        if (!isDisabled) {
-                          handleColorSelect(group.color);
-                        }
-                      }}
-                      disabled={isDisabled}
-                      className={`
-                        relative flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 transition-all
-                        ${isSelected 
-                          ? 'border-gray-900 bg-gray-50 shadow-md' 
-                          : isDisabled
-                          ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                        }
-                      `}
-                      aria-label={`Select color ${colorName}`}
-                    >
-                      <div 
-                        className="w-6 h-6 rounded-full border-2 border-gray-300 flex-shrink-0"
-                        style={{ backgroundColor: colorValue }}
-                      />
-                      <span className="text-sm font-medium text-gray-900 capitalize">{colorName}</span>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                        {group.stock}
-                      </span>
-                    </button>
-                  );
-                })}
+          <div className="mt-8 p-6 bg-white border border-gray-200 rounded-2xl shadow-sm space-y-6">
+            {/* Stock Status */}
+            {currentVariant && (
+              <div className="flex items-center justify-between">
+                <p className={`text-sm font-semibold ${currentVariant.stock > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {currentVariant.stock > 0 
+                    ? `✓ Պահեստում: ${currentVariant.stock} հատ` 
+                    : '✗ Պահեստում չկա'
+                  }
+                </p>
+                {isOutOfStock && (
+                  <span className="text-xs font-medium text-red-500 uppercase tracking-wide">Առկա չէ</span>
+                )}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Size Selector */}
-          {sizeGroups.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wide">
-                Չափս
-              </h3>
-              <div className="flex flex-wrap gap-3">
-                {sizeGroups.map((group) => {
-                  const isSelected = selectedSize === group.size;
-                  const sizeName = group.size;
-                  
-                  // Check if this size has available variants with selected color
-                  const availableVariants = selectedColor
-                    ? group.variants.filter(v => {
-                        const hasColor = v.options?.some(opt => opt.key === 'color' && opt.value === selectedColor);
-                        return hasColor && v.stock > 0;
-                      })
-                    : group.variants.filter(v => v.stock > 0);
-                  
-                  const isDisabled = availableVariants.length === 0 && selectedColor !== null;
-                  
-                  return (
-                    <button
-                      key={group.size}
-                      type="button"
-                      onClick={() => {
-                        if (!isDisabled) {
-                          handleSizeSelect(group.size);
-                        }
-                      }}
-                      disabled={isDisabled}
-                      className={`
-                        min-w-[60px] px-4 py-2.5 rounded-lg border-2 transition-all text-center
-                        ${isSelected 
-                          ? 'border-gray-900 bg-gray-50 shadow-md font-semibold' 
-                          : isDisabled
-                          ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                        }
-                      `}
-                      aria-label={`Select size ${sizeName}`}
-                    >
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-sm font-medium text-gray-900">{sizeName}</span>
-                        <span className="text-xs text-gray-500">{group.stock} հատ</span>
-                      </div>
-                    </button>
-                  );
-                })}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center border border-gray-300 rounded-xl overflow-hidden bg-gray-50">
+                <button
+                  type="button"
+                  onClick={() => adjustQuantity(-1)}
+                  disabled={quantity <= 1 || isOutOfStock}
+                  className="w-12 h-12 flex items-center justify-center text-gray-600 hover:text-gray-900 disabled:text-gray-300 transition-colors"
+                  aria-label="Decrease quantity"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <div className="w-16 text-center font-semibold text-gray-900 select-none text-lg">
+                  {quantity}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => adjustQuantity(1)}
+                  disabled={isOutOfStock || quantity >= maxQuantity}
+                  className="w-12 h-12 flex items-center justify-center text-gray-600 hover:text-gray-900 disabled:text-gray-300 transition-colors"
+                  aria-label="Increase quantity"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
               </div>
-            </div>
-          )}
 
-          {/* Stock Status */}
-          {currentVariant && (
-            <div className="mb-6">
-              <p className={`text-sm font-medium ${currentVariant.stock > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {currentVariant.stock > 0 
-                  ? `✓ Պահեստում: ${currentVariant.stock} հատ` 
-                  : '✗ Պահեստում չկա'
-                }
-              </p>
-            </div>
-          )}
+              <button
+                type="button"
+                className="flex-1 min-w-[220px] h-12 px-8 bg-gray-900 text-white font-semibold tracking-wide rounded-xl uppercase hover:bg-black transition-colors disabled:bg-gray-300 disabled:text-gray-500"
+                disabled={isOutOfStock || isAddingToCart}
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
 
-          <div className="space-y-4">
-            <Button 
-              type="button"
-              variant="primary" 
-              size="lg" 
-              className="w-full"
-              disabled={!currentVariant || currentVariant.stock === 0 || isAddingToCart}
-              onClick={async (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                console.log('Add to cart clicked', { currentVariant, productId: product.id, isLoggedIn });
-                
-                if (!currentVariant || currentVariant.stock === 0) {
-                  console.warn('Cannot add to cart: no variant or out of stock', { currentVariant });
-                  return;
-                }
-                
-                if (!isLoggedIn) {
-                  console.log('User not logged in, redirecting to login');
-                  router.push(`/login?redirect=/products/${slug}`);
-                  return;
-                }
+                  if (isOutOfStock || !currentVariant) {
+                    return;
+                  }
 
-                setIsAddingToCart(true);
-                try {
-                  console.log('Adding to cart:', {
-                    productId: product.id,
-                    variantId: currentVariant.id,
-                    quantity: 1,
-                  });
-                  
-                  await apiClient.post(
-                    '/api/v1/cart/items',
-                    {
+                  setIsAddingToCart(true);
+                  try {
+                    if (!product) {
+                      setShowMessage('Ապրանքը հասանելի չէ');
+                      setTimeout(() => setShowMessage(null), 2000);
+                      return;
+                    }
+
+                    // Եթե օգտատերը գրանցված չէ, օգտագործում ենք localStorage
+                    if (!isLoggedIn) {
+                      if (typeof window === 'undefined') {
+                        setIsAddingToCart(false);
+                        return;
+                      }
+
+                      const CART_KEY = 'shop_cart_guest';
+                      const stored = localStorage.getItem(CART_KEY);
+                      const cart: Array<{ productId: string; productSlug: string; variantId: string; quantity: number }> = stored ? JSON.parse(stored) : [];
+                      
+                      // Ստուգում ենք, արդյոք արդեն կա այս ապրանքը զամբյուղում
+                      const existingItem = cart.find(item => item.productId === product.id && item.variantId === currentVariant.id);
+                      
+                      if (existingItem) {
+                        existingItem.quantity += quantity;
+                      } else {
+                        cart.push({
+                          productId: product.id,
+                          productSlug: product.slug,
+                          variantId: currentVariant.id,
+                          quantity,
+                        });
+                      }
+                      
+                      localStorage.setItem(CART_KEY, JSON.stringify(cart));
+                      window.dispatchEvent(new Event('cart-updated'));
+                      setShowMessage(`Ավելացվեց ${quantity} հատ զամբյուղում`);
+                      setTimeout(() => setShowMessage(null), 2000);
+                      setIsAddingToCart(false);
+                      return;
+                    }
+
+                    // Եթե օգտատերը գրանցված է, օգտագործում ենք API
+                    await apiClient.post('/api/v1/cart/items', {
                       productId: product.id,
                       variantId: currentVariant.id,
-                      quantity: 1,
-                    }
-                  );
+                      quantity,
+                    });
 
-                  console.log('Successfully added to cart');
-                  setShowMessage('Added to cart');
-                  setTimeout(() => setShowMessage(null), 2000);
-                  
-                  // Trigger cart update event
-                  window.dispatchEvent(new Event('cart-updated'));
-                } catch (error: any) {
-                  console.error('Error adding to cart:', error);
-                  if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+                    setShowMessage(`Ավելացվեց ${quantity} հատ զամբյուղում`);
+                    setTimeout(() => setShowMessage(null), 2000);
+                    window.dispatchEvent(new Event('cart-updated'));
+                  } catch (error: any) {
+                    console.error('Error adding to cart:', error);
+                    if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+                      // Եթե սխալ է տեղի ունեցել, փորձում ենք localStorage-ով
+                      if (typeof window !== 'undefined' && product && currentVariant) {
+                        try {
+                          const CART_KEY = 'shop_cart_guest';
+                          const stored = localStorage.getItem(CART_KEY);
+                          const cart: Array<{ productId: string; productSlug: string; variantId: string; quantity: number }> = stored ? JSON.parse(stored) : [];
+                          
+                          const existingItem = cart.find(item => item.productId === product.id && item.variantId === currentVariant.id);
+                          
+                          if (existingItem) {
+                            existingItem.quantity += quantity;
+                          } else {
+                            cart.push({
+                              productId: product.id,
+                              productSlug: product.slug,
+                              variantId: currentVariant.id,
+                              quantity,
+                            });
+                          }
+                          
+                          localStorage.setItem(CART_KEY, JSON.stringify(cart));
+                          window.dispatchEvent(new Event('cart-updated'));
+                          setShowMessage(`Ավելացվեց ${quantity} հատ զամբյուղում`);
+                          setTimeout(() => setShowMessage(null), 2000);
+                        } catch (localError) {
+                          console.error('Error adding to guest cart:', localError);
+                          setShowMessage('Չհաջողվեց ավելացնել զամբյուղ');
+                          setTimeout(() => setShowMessage(null), 3000);
+                        }
+                      } else {
+                        setShowMessage('Չհաջողվեց ավելացնել զամբյուղ');
+                        setTimeout(() => setShowMessage(null), 3000);
+                      }
+                    } else {
+                      setShowMessage('Չհաջողվեց ավելացնել զամբյուղ');
+                      setTimeout(() => setShowMessage(null), 3000);
+                    }
+                  } finally {
                     setIsAddingToCart(false);
-                    router.push(`/login?redirect=/products/${slug}`);
-                    return;
-                  } else {
-                    setShowMessage('Failed to add to cart');
-                    setTimeout(() => setShowMessage(null), 3000);
                   }
-                } finally {
-                  setIsAddingToCart(false);
-                }
-              }}
-            >
-              {isAddingToCart ? 'Adding...' : (currentVariant && currentVariant.stock > 0 ? 'Add to Cart' : 'Out of Stock')}
-            </Button>
-            <Button 
-              type="button"
-              variant="outline" 
-              size="lg" 
-              className="w-full"
-              onClick={handleAddToWishlist}
-            >
-              {isInWishlist ? 'Remove from Wishlist' : 'Add to Wishlist'}
-            </Button>
+                }}
+              >
+                {isAddingToCart ? 'Adding…' : isOutOfStock ? 'Out of Stock' : 'Add to Cart'}
+              </button>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddToWishlist}
+                  className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center transition-all ${
+                    isInWishlist
+                      ? 'border-gray-900 text-gray-900 bg-gray-50'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                  aria-label={isInWishlist ? 'Remove from wishlist' : 'Add to wishlist'}
+                >
+                  <Heart className="w-5 h-5" fill={isInWishlist ? 'currentColor' : 'none'} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCompareToggle}
+                  className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center transition-all ${
+                    isInCompare
+                      ? 'border-gray-900 text-gray-900 bg-gray-50'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                  aria-label={isInCompare ? 'Remove from compare' : 'Add to compare'}
+                >
+                  <GitCompare className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Color Selector */}
+            {colorGroups.length > 0 && (
+              <div className="space-y-3 border-t border-gray-100 pt-4">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                  Գույն
+                </h3>
+                <div className="flex flex-wrap gap-3">
+                  {colorGroups.map((group) => {
+                    const isSelected = selectedColor === group.color;
+                    const colorName = group.color;
+                    const colorValue = getColorValue(colorName);
+                    
+                    // Check if this color has available variants with selected size
+                    const availableVariants = selectedSize
+                      ? group.variants.filter(v => {
+                          const hasSize = v.options?.some(opt => opt.key === 'size' && opt.value === selectedSize);
+                          return hasSize && v.stock > 0;
+                        })
+                      : group.variants.filter(v => v.stock > 0);
+                    
+                    const isDisabled = availableVariants.length === 0 && selectedSize !== null;
+                    
+                    return (
+                      <button
+                        key={group.color}
+                        type="button"
+                        onClick={() => {
+                          if (!isDisabled) {
+                            handleColorSelect(group.color);
+                          }
+                        }}
+                        disabled={isDisabled}
+                        className={`
+                          relative flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 transition-all
+                          ${isSelected 
+                            ? 'border-gray-900 bg-gray-50 shadow-md' 
+                            : isDisabled
+                            ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }
+                        `}
+                        aria-label={`Select color ${colorName}`}
+                      >
+                        <div 
+                          className="w-6 h-6 rounded-full border-2 border-gray-300 flex-shrink-0"
+                          style={{ backgroundColor: colorValue }}
+                        />
+                        <span className="text-sm font-medium text-gray-900 capitalize">{colorName}</span>
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                          {group.stock}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Size Selector */}
+            {sizeGroups.length > 0 && (
+              <div className="space-y-3 border-t border-gray-100 pt-4">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                  Չափս
+                </h3>
+                <div className="flex flex-wrap gap-3">
+                  {sizeGroups.map((group) => {
+                    const isSelected = selectedSize === group.size;
+                    const sizeName = group.size;
+                    
+                    // Check if this size has available variants with selected color
+                    const availableVariants = selectedColor
+                      ? group.variants.filter(v => {
+                          const hasColor = v.options?.some(opt => opt.key === 'color' && opt.value === selectedColor);
+                          return hasColor && v.stock > 0;
+                        })
+                      : group.variants.filter(v => v.stock > 0);
+                    
+                    const isDisabled = availableVariants.length === 0 && selectedColor !== null;
+                    
+                    return (
+                      <button
+                        key={group.size}
+                        type="button"
+                        onClick={() => {
+                          if (!isDisabled) {
+                            handleSizeSelect(group.size);
+                          }
+                        }}
+                        disabled={isDisabled}
+                        className={`
+                          min-w-[60px] px-4 py-2.5 rounded-lg border-2 transition-all text-center
+                          ${isSelected 
+                            ? 'border-gray-900 bg-gray-50 shadow-md font-semibold' 
+                            : isDisabled
+                            ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }
+                        `}
+                        aria-label={`Select size ${sizeName}`}
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-sm font-medium text-gray-900">{sizeName}</span>
+                          <span className="text-xs text-gray-500">{group.stock} հատ</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Success/Error Message */}

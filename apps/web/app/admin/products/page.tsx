@@ -109,9 +109,36 @@ export default function ProductsPage() {
   const handleTogglePublished = async (productId: string, currentStatus: boolean, productTitle: string) => {
     try {
       const newStatus = !currentStatus;
-      await apiClient.put(`/api/v1/admin/products/${productId}`, {
+      
+      // Получаем полный продукт, чтобы сохранить все его данные, включая media
+      let existingMedia: string[] = [];
+      try {
+        const fullProduct = await apiClient.get(`/api/v1/admin/products/${productId}`);
+        if (fullProduct.media && Array.isArray(fullProduct.media)) {
+          existingMedia = fullProduct.media;
+          console.log('📸 [ADMIN] Found existing media:', existingMedia);
+        }
+      } catch (fetchErr) {
+        console.warn('⚠️ [ADMIN] Could not fetch full product, using current product data:', fetchErr);
+        // Если не удалось получить полный продукт, используем данные из списка
+        const currentProduct = products.find(p => p.id === productId);
+        if (currentProduct?.image) {
+          existingMedia = [currentProduct.image];
+        }
+      }
+      
+      // Подготавливаем данные для обновления
+      const updateData: any = {
         published: newStatus,
-      });
+      };
+      
+      // Сохраняем существующие media, чтобы они не пропали
+      if (existingMedia.length > 0) {
+        updateData.media = existingMedia;
+        console.log('📸 [ADMIN] Preserving media:', existingMedia);
+      }
+      
+      await apiClient.put(`/api/v1/admin/products/${productId}`, updateData);
       
       console.log(`✅ [ADMIN] Product ${newStatus ? 'published' : 'unpublished'} successfully`);
       

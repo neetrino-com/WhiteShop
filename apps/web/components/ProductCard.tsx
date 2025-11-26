@@ -8,6 +8,14 @@ import { formatPrice, getStoredCurrency } from '../lib/currency';
 import { apiClient } from '../lib/api-client';
 import { useAuth } from '../lib/auth/AuthContext';
 
+interface ProductLabel {
+  id: string;
+  type: 'text' | 'percentage';
+  value: string;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  color: string | null;
+}
+
 interface Product {
   id: string;
   slug: string;
@@ -19,6 +27,10 @@ interface Product {
     id: string;
     name: string;
   } | null;
+  labels?: ProductLabel[];
+  compareAtPrice?: number;
+  originalPrice?: number | null;
+  globalDiscount?: number | null;
 }
 
 type ViewMode = 'list' | 'grid-2' | 'grid-3';
@@ -141,6 +153,12 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
     e.preventDefault();
     e.stopPropagation();
     
+    // Проверка авторизации - если не залогинен, перенаправляем на страницу входа
+    if (!isLoggedIn) {
+      router.push(`/login?redirect=/products`);
+      return;
+    }
+    
     if (typeof window === 'undefined') return;
     
     try {
@@ -204,8 +222,64 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
       return;
     }
 
+    // Если пользователь не залогинен, используем localStorage для корзины
     if (!isLoggedIn) {
-      router.push(`/login?redirect=/products`);
+      setIsAddingToCart(true);
+      try {
+        const CART_KEY = 'shop_cart_guest';
+        const stored = localStorage.getItem(CART_KEY);
+        const cart: Array<{ productId: string; productSlug: string; variantId?: string; quantity: number }> = stored ? JSON.parse(stored) : [];
+        
+        // Получаем детали продукта для получения variant ID
+        interface ProductDetails {
+          id: string;
+          slug: string;
+          variants?: Array<{
+            id: string;
+            sku: string;
+            price: number;
+            stock: number;
+            available: boolean;
+          }>;
+        }
+
+        const productDetails = await apiClient.get<ProductDetails>(`/api/v1/products/${product.slug}`);
+        
+        if (!productDetails.variants || productDetails.variants.length === 0) {
+          alert('No variants available');
+          setIsAddingToCart(false);
+          return;
+        }
+
+        const variantId = productDetails.variants[0].id;
+        
+        // Проверяем, есть ли уже этот товар в корзине
+        const existingItem = cart.find(item => item.productId === product.id && item.variantId === variantId);
+        
+        if (existingItem) {
+          existingItem.quantity += 1;
+          // Обновляем slug, если его не было
+          if (!existingItem.productSlug) {
+            existingItem.productSlug = productDetails.slug;
+          }
+        } else {
+          cart.push({
+            productId: product.id,
+            productSlug: productDetails.slug || product.slug,
+            variantId: variantId,
+            quantity: 1,
+          });
+        }
+        
+        localStorage.setItem(CART_KEY, JSON.stringify(cart));
+        window.dispatchEvent(new Event('cart-updated'));
+      } catch (error) {
+        console.error('Error adding to guest cart:', error);
+        // Если не удалось добавить в localStorage, перенаправляем на login
+        router.push(`/login?redirect=/products`);
+      } finally {
+        setIsAddingToCart(false);
+      }
       return;
     }
 
@@ -246,10 +320,9 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
       window.dispatchEvent(new Event('cart-updated'));
     } catch (error: any) {
       console.error('Error adding to cart:', error);
-      if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+      // Если ошибка авторизации, перенаправляем на login
+      if (error.message?.includes('401') || error.message?.includes('Unauthorized') || error?.status === 401 || error?.statusCode === 401) {
         router.push(`/login?redirect=/products`);
-      } else {
-        alert('Failed to add to cart');
       }
     } finally {
       setIsAddingToCart(false);
@@ -288,10 +361,10 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
           {/* Product Info */}
           <div className="flex-1 min-w-0">
             <Link href={`/products/${product.slug}`} className="block">
-              <h3 className="text-base font-medium text-gray-900 hover:text-blue-600 transition-colors line-clamp-2">
+              <h3 className="text-xl font-medium text-gray-900 hover:text-blue-600 transition-colors line-clamp-2">
                 {product.title}
               </h3>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-lg text-gray-500 mt-1">
                 {product.brand?.name || 'Grocery'}
               </p>
             </Link>
@@ -299,9 +372,22 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
 
           {/* Price */}
           <div className="flex items-center gap-4">
-            <span className="text-base font-semibold text-blue-600 whitespace-nowrap">
-              {formatPrice(product.price || 0, currency || 'USD')}
-            </span>
+            <div className="flex flex-col">
+              <span className="text-2xl font-semibold text-blue-600 whitespace-nowrap">
+                {formatPrice(product.price || 0, currency || 'USD')}
+              </span>
+              {(product.originalPrice && product.originalPrice > product.price) || 
+               (product.compareAtPrice && product.compareAtPrice > product.price) ? (
+                <span className="text-lg text-gray-500 line-through whitespace-nowrap">
+                  {formatPrice(
+                    (product.originalPrice && product.originalPrice > product.price) 
+                      ? product.originalPrice 
+                      : (product.compareAtPrice || 0), 
+                    currency || 'USD'
+                  )}
+                </span>
+              ) : null}
+            </div>
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
@@ -361,9 +447,44 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
     );
   }
 
+  // Helper function to get label style based on position and type
+  const getLabelStyle = (label: ProductLabel) => {
+    const baseStyle = 'absolute z-20 px-2 py-1 text-xs font-bold rounded-md';
+    const positionStyles = {
+      'top-left': 'top-2 left-2',
+      'top-right': 'top-2 right-2',
+      'bottom-left': 'bottom-2 left-2',
+      'bottom-right': 'bottom-2 right-2',
+    };
+    
+    let colorStyle = '';
+    if (label.color) {
+      colorStyle = `background-color: ${label.color}; color: white;`;
+    } else {
+      // Default colors based on type
+      if (label.type === 'percentage') {
+        colorStyle = 'bg-red-600 text-white';
+      } else {
+        // Text labels - different colors based on value
+        const value = label.value.toLowerCase();
+        if (value.includes('new') || value.includes('նոր')) {
+          colorStyle = 'bg-green-600 text-white';
+        } else if (value.includes('hot') || value.includes('տաք')) {
+          colorStyle = 'bg-orange-600 text-white';
+        } else if (value.includes('sale') || value.includes('զեղչ')) {
+          colorStyle = 'bg-red-600 text-white';
+        } else {
+          colorStyle = 'bg-blue-600 text-white';
+        }
+      }
+    }
+    
+    return `${baseStyle} ${positionStyles[label.position]} ${!label.color ? colorStyle : ''}`;
+  };
+
   // Grid view layout (original)
   return (
-    <div className="bg-white rounded-lg overflow-hidden hover:shadow-md transition-shadow relative group">
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow relative group">
       {/* Product Image */}
       <div className="aspect-square bg-gray-100 relative overflow-hidden">
         <Link href={`/products/${product.slug}`} className="block w-full h-full">
@@ -383,6 +504,21 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
             </div>
           )}
         </Link>
+        
+        {/* Product Labels */}
+        {product.labels && product.labels.length > 0 && (
+          <div className="absolute inset-0 pointer-events-none">
+            {product.labels.map((label) => (
+              <div
+                key={label.id}
+                className={getLabelStyle(label)}
+                style={label.color ? { backgroundColor: label.color, color: 'white' } : undefined}
+              >
+                {label.type === 'percentage' ? `${label.value}%` : label.value}
+              </div>
+            ))}
+          </div>
+        )}
         
         {/* Action Icons - появляются при наведении */}
         <div className={`absolute ${isCompact ? 'top-1.5 right-1.5' : 'top-3 right-3'} flex flex-col ${isCompact ? 'gap-1.5' : 'gap-2'} opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10`}>
@@ -446,23 +582,34 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
       <div className={isCompact ? 'p-2.5' : 'p-4'}>
         <Link href={`/products/${product.slug}`} className="block">
           {/* Product Title */}
-          <h3 className={`${isCompact ? 'text-xs' : 'text-base'} font-medium text-gray-900 ${isCompact ? 'mb-0.5' : 'mb-1'} line-clamp-2`}>
+          <h3 className={`${isCompact ? 'text-base' : 'text-xl'} font-medium text-gray-900 ${isCompact ? 'mb-0.5' : 'mb-1'} line-clamp-2`}>
             {product.title}
           </h3>
           
           {/* Category - Using brand name as category or default to "Grocery" */}
-          <p className={`${isCompact ? 'text-[10px]' : 'text-sm'} text-gray-500 ${isCompact ? 'mb-1' : 'mb-2'}`}>
+          <p className={`${isCompact ? 'text-sm' : 'text-lg'} text-gray-500 ${isCompact ? 'mb-1' : 'mb-2'}`}>
             {product.brand?.name || 'Grocery'}
           </p>
-          
-          {/* Price */}
-          <span className={`${isCompact ? 'text-sm' : 'text-lg'} font-semibold text-gray-900 block`}>
-            {formatPrice(product.price || 0, currency || 'USD')}
-          </span>
         </Link>
-        
-        {/* Cart Icon - всегда видимая в нижней части */}
-        <div className={isCompact ? 'mt-1.5 flex justify-end' : 'mt-3 flex justify-end'}>
+
+        {/* Price + Cart Row */}
+        <div className={`mt-2 flex items-center justify-between ${isCompact ? 'gap-2' : 'gap-4'}`}>
+          <div className="flex flex-col">
+            <span className={`${isCompact ? 'text-lg' : 'text-2xl'} font-semibold text-gray-900`}>
+              {formatPrice(product.price || 0, currency || 'USD')}
+            </span>
+            {(product.originalPrice && product.originalPrice > product.price) || 
+             (product.compareAtPrice && product.compareAtPrice > product.price) ? (
+              <span className={`${isCompact ? 'text-sm' : 'text-lg'} text-gray-500 line-through`}>
+                {formatPrice(
+                  (product.originalPrice && product.originalPrice > product.price) 
+                    ? product.originalPrice 
+                    : (product.compareAtPrice || 0), 
+                  currency || 'USD'
+                )}
+              </span>
+            ) : null}
+          </div>
           <button
             onClick={handleAddToCart}
             disabled={!product.inStock || isAddingToCart}

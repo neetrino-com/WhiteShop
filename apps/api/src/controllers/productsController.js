@@ -1,6 +1,7 @@
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const Brand = require('../models/Brand');
+const Settings = require('../models/Settings');
 const { safeRedis } = require('../lib/redis');
 
 const productsController = {
@@ -233,6 +234,10 @@ const productsController = {
       // Apply pagination
       products = products.slice(skip, skip + parseInt(limit));
 
+      // Get global discount setting
+      const globalDiscountSetting = await Settings.findOne({ key: 'globalDiscount' }).lean();
+      const globalDiscount = globalDiscountSetting?.value || 0;
+
       const response = {
         data: products.map((product) => {
           const translation = product.translations?.find((t) => t.locale === lang) || product.translations?.[0];
@@ -240,6 +245,68 @@ const productsController = {
           const variant = product.variants
             ?.filter((v) => v.published)
             .sort((a, b) => a.price - b.price)[0];
+
+          const originalPrice = variant?.price || 0;
+          let finalPrice = originalPrice;
+          let discountPrice = null;
+          const productDiscount = product.discountPercent || 0;
+
+          // Apply product-specific discount first (if exists), otherwise apply global discount
+          let actualDiscount = 0;
+          if (productDiscount > 0 && originalPrice > 0) {
+            discountPrice = originalPrice;
+            finalPrice = originalPrice * (1 - productDiscount / 100);
+            actualDiscount = productDiscount;
+          } else if (globalDiscount > 0 && originalPrice > 0) {
+            discountPrice = originalPrice;
+            finalPrice = originalPrice * (1 - globalDiscount / 100);
+            actualDiscount = globalDiscount;
+          }
+
+          // Process labels - update percentage labels with actual discount
+          const processedLabels = (product.labels || []).map((label) => {
+            // If it's a percentage label and there's an actual discount, update the value
+            if (label.type === 'percentage' && actualDiscount > 0) {
+              return {
+                id: label._id?.toString() || '',
+                type: label.type,
+                value: Math.round(actualDiscount).toString(), // Round to whole number
+                position: label.position || 'top-left',
+                color: label.color || null,
+              };
+            }
+            // Otherwise, return label as is
+            return {
+              id: label._id?.toString() || '',
+              type: label.type,
+              value: label.value,
+              position: label.position || 'top-left',
+              color: label.color || null,
+            };
+          });
+
+          // If there is a discount but no percentage label, add an automatic one
+          if (actualDiscount > 0) {
+            const hasPercentageLabel = processedLabels.some(
+              (label) => label.type === 'percentage'
+            );
+
+            if (!hasPercentageLabel) {
+              const autoLabel = {
+                id: `auto-discount-${product._id.toString()}`,
+                type: 'percentage',
+                value: Math.round(actualDiscount).toString(),
+                position: 'top-left',
+                color: null,
+              };
+
+              processedLabels.push(autoLabel);
+              console.log('🏷️ [PRODUCTS] Auto discount label added', {
+                productId: product._id.toString(),
+                discount: autoLabel.value,
+              });
+            }
+          }
 
           return {
             id: product._id.toString(),
@@ -251,12 +318,16 @@ const productsController = {
                   name: brandTranslation?.name || '',
                 }
               : null,
-            price: variant?.price || 0,
+            price: finalPrice,
+            originalPrice: discountPrice || variant?.compareAtPrice || null,
             compareAtPrice: variant?.compareAtPrice || null,
+            globalDiscount: globalDiscount > 0 ? globalDiscount : null,
+            productDiscount: productDiscount > 0 ? productDiscount : null,
             image: Array.isArray(product.media) && product.media[0]
               ? (typeof product.media[0] === 'string' ? product.media[0] : product.media[0].url)
               : null,
             inStock: (variant?.stock || 0) > 0,
+            labels: processedLabels,
           };
         }),
         meta: {
@@ -522,6 +593,36 @@ const productsController = {
         _id: { $in: product.categoryIds || [] },
       }).lean();
 
+      // Get global discount setting
+      const globalDiscountSetting = await Settings.findOne({ key: 'globalDiscount' }).lean();
+      const globalDiscount = globalDiscountSetting?.value || 0;
+      const productDiscount = product.discountPercent || 0;
+
+      // Calculate actual discount (product-specific takes priority)
+      const actualDiscount = productDiscount > 0 ? productDiscount : (globalDiscount > 0 ? globalDiscount : 0);
+
+      // Process labels - update percentage labels with actual discount
+      const processedLabels = (product.labels || []).map((label) => {
+        // If it's a percentage label and there's an actual discount, update the value
+        if (label.type === 'percentage' && actualDiscount > 0) {
+          return {
+            id: label._id?.toString() || '',
+            type: label.type,
+            value: Math.round(actualDiscount).toString(), // Round to whole number
+            position: label.position || 'top-left',
+            color: label.color || null,
+          };
+        }
+        // Otherwise, return label as is
+        return {
+          id: label._id?.toString() || '',
+          type: label.type,
+          value: label.value,
+          position: label.position || 'top-left',
+          color: label.color || null,
+        };
+      });
+
       const response = {
         id: product._id.toString(),
         slug: translation?.slug || '',
@@ -545,22 +646,43 @@ const productsController = {
           };
         }),
         media: Array.isArray(product.media) ? product.media : [],
+        labels: processedLabels,
         variants: product.variants
           ?.filter((v) => v.published)
           .sort((a, b) => a.price - b.price)
-          .map((variant) => ({
-            id: variant._id?.toString() || '',
-            sku: variant.sku,
-            price: variant.price,
-            compareAtPrice: variant.compareAtPrice,
-            stock: variant.stock,
-            options: variant.options?.map((opt) => ({
-              attribute: opt.attributeKey || '',
-              value: opt.value || '',
-              key: opt.attributeKey || '',
-            })) || [],
-            available: variant.stock > 0,
-          })) || [],
+          .map((variant) => {
+            const originalPrice = variant.price;
+            let finalPrice = originalPrice;
+            let discountPrice = null;
+
+            // Apply product-specific discount first (if exists), otherwise apply global discount
+            if (productDiscount > 0 && originalPrice > 0) {
+              discountPrice = originalPrice;
+              finalPrice = originalPrice * (1 - productDiscount / 100);
+            } else if (globalDiscount > 0 && originalPrice > 0) {
+              discountPrice = originalPrice;
+              finalPrice = originalPrice * (1 - globalDiscount / 100);
+            }
+
+            return {
+              id: variant._id?.toString() || '',
+              sku: variant.sku,
+              price: finalPrice,
+              originalPrice: discountPrice || variant.compareAtPrice || null,
+              compareAtPrice: variant.compareAtPrice || null,
+              globalDiscount: globalDiscount > 0 ? globalDiscount : null,
+              productDiscount: productDiscount > 0 ? productDiscount : null,
+              stock: variant.stock,
+              options: variant.options?.map((opt) => ({
+                attribute: opt.attributeKey || '',
+                value: opt.value || '',
+                key: opt.attributeKey || '',
+              })) || [],
+              available: variant.stock > 0,
+            };
+          }) || [],
+        globalDiscount: globalDiscount > 0 ? globalDiscount : null,
+        productDiscount: productDiscount > 0 ? productDiscount : null,
         seo: {
           title: translation?.seoTitle || translation?.title,
           description: translation?.seoDescription,

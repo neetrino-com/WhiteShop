@@ -179,8 +179,6 @@ export default function WishlistPage() {
       console.error('Error adding to cart:', error);
       if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
         router.push(`/login?redirect=/wishlist`);
-      } else {
-        alert('Failed to add to cart');
       }
     } finally {
       setAddingToCart(prev => {

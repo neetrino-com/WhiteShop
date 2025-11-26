@@ -38,6 +38,8 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState<OrdersResponse['meta'] | null>(null);
+  const [updatingStatuses, setUpdatingStatuses] = useState<Set<string>>(new Set());
+  const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (!isLoading) {
@@ -101,6 +103,48 @@ export default function OrdersPage() {
     }
   };
 
+  const handleStatusChange = async (orderId: string, newStatus: string) => {
+    try {
+      console.log('📝 [ADMIN] Changing order status:', { orderId, newStatus });
+      
+      // Add to updating set
+      setUpdatingStatuses((prev) => new Set(prev).add(orderId));
+      setUpdateMessage(null);
+
+      // Update order status via API
+      await apiClient.put(`/api/v1/admin/orders/${orderId}`, {
+        status: newStatus,
+      });
+
+      console.log('✅ [ADMIN] Order status updated successfully');
+
+      // Update local state
+      setOrders((prevOrders) =>
+        prevOrders.map((order) =>
+          order.id === orderId ? { ...order, status: newStatus } : order
+        )
+      );
+
+      // Show success message
+      setUpdateMessage({ type: 'success', text: 'Status updated successfully' });
+      setTimeout(() => setUpdateMessage(null), 3000);
+    } catch (err) {
+      console.error('❌ [ADMIN] Error updating order status:', err);
+      setUpdateMessage({ 
+        type: 'error', 
+        text: 'Failed to update status. Please try again.' 
+      });
+      setTimeout(() => setUpdateMessage(null), 5000);
+    } finally {
+      // Remove from updating set
+      setUpdatingStatuses((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(orderId);
+        return newSet;
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -134,7 +178,7 @@ export default function OrdersPage() {
 
         {/* Filters */}
         <Card className="p-4 mb-6">
-          <div className="flex gap-4">
+          <div className="flex gap-4 items-center">
             <select
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={statusFilter}
@@ -149,6 +193,17 @@ export default function OrdersPage() {
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            {updateMessage && (
+              <div
+                className={`px-4 py-2 rounded-md text-sm ${
+                  updateMessage.type === 'success'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-red-100 text-red-800'
+                }`}
+              >
+                {updateMessage.text}
+              </div>
+            )}
           </div>
         </Card>
 
@@ -205,9 +260,25 @@ export default function OrdersPage() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(order.status)}`}>
-                            {order.status}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            {updatingStatuses.has(order.id) ? (
+                              <div className="flex items-center gap-2">
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900"></div>
+                                <span className="text-xs text-gray-500">Updating...</span>
+                              </div>
+                            ) : (
+                              <select
+                                value={order.status}
+                                onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                                className={`px-2 py-1 text-xs font-medium rounded-md border-0 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${getStatusColor(order.status)}`}
+                              >
+                                <option value="pending">Pending</option>
+                                <option value="processing">Processing</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
+                              </select>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${

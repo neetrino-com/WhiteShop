@@ -45,8 +45,8 @@ function ProfilePageContent() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const initialTab = (searchParams.get('tab') as 'personal' | 'addresses' | 'password' | 'orders') || 'personal';
-  const [activeTab, setActiveTab] = useState<'personal' | 'addresses' | 'password' | 'orders'>(initialTab);
+  const initialTab = (searchParams.get('tab') as 'dashboard' | 'personal' | 'addresses' | 'password' | 'orders') || 'dashboard';
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'personal' | 'addresses' | 'password' | 'orders'>(initialTab);
 
   // Personal info form
   const [personalInfo, setPersonalInfo] = useState({
@@ -83,6 +83,30 @@ function ProfilePageContent() {
   });
   const [savingPassword, setSavingPassword] = useState(false);
 
+  // Dashboard
+  const [dashboardData, setDashboardData] = useState<{
+    stats: {
+      totalOrders: number;
+      pendingOrders: number;
+      completedOrders: number;
+      totalSpent: number;
+      addressesCount: number;
+      ordersByStatus: Record<string, number>;
+    };
+    recentOrders: Array<{
+      id: string;
+      number: string;
+      status: string;
+      paymentStatus: string;
+      fulfillmentStatus: string;
+      total: number;
+      currency: string;
+      itemsCount: number;
+      createdAt: string;
+    }>;
+  } | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+
   // Orders
   const [orders, setOrders] = useState<Array<{
     id: string;
@@ -115,7 +139,7 @@ function ProfilePageContent() {
   // Update tab from URL query parameter
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab && ['personal', 'addresses', 'password', 'orders'].includes(tab)) {
+    if (tab && ['dashboard', 'personal', 'addresses', 'password', 'orders'].includes(tab)) {
       setActiveTab(tab as typeof activeTab);
     }
   }, [searchParams]);
@@ -156,6 +180,49 @@ function ProfilePageContent() {
       loadOrders();
     }
   }, [isLoggedIn, authLoading, activeTab, loadOrders]);
+
+  const loadDashboard = useCallback(async () => {
+    try {
+      console.log('📊 [PROFILE] Loading dashboard data...');
+      setDashboardLoading(true);
+      setError(null);
+      const data = await apiClient.get<{
+        stats: {
+          totalOrders: number;
+          pendingOrders: number;
+          completedOrders: number;
+          totalSpent: number;
+          addressesCount: number;
+          ordersByStatus: Record<string, number>;
+        };
+        recentOrders: Array<{
+          id: string;
+          number: string;
+          status: string;
+          paymentStatus: string;
+          fulfillmentStatus: string;
+          total: number;
+          currency: string;
+          itemsCount: number;
+          createdAt: string;
+        }>;
+      }>('/api/v1/users/dashboard');
+      console.log('✅ [PROFILE] Dashboard data loaded:', data);
+      setDashboardData(data);
+    } catch (err: any) {
+      console.error('❌ [PROFILE] Error loading dashboard:', err);
+      setError(err.message || 'Failed to load dashboard data');
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, []);
+
+  // Load dashboard when dashboard tab is active
+  useEffect(() => {
+    if (isLoggedIn && !authLoading && activeTab === 'dashboard') {
+      loadDashboard();
+    }
+  }, [isLoggedIn, authLoading, activeTab, loadDashboard]);
 
   const loadProfile = async () => {
     try {
@@ -360,6 +427,15 @@ function ProfilePageContent() {
   // Tab configuration with icons
   const tabs = [
     {
+      id: 'dashboard' as const,
+      label: 'Dashboard',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+    },
+    {
       id: 'personal' as const,
       label: 'Personal Information',
       icon: (
@@ -452,6 +528,190 @@ function ProfilePageContent() {
               <p className="text-sm text-green-600">{success}</p>
             </div>
           )}
+
+      {/* Dashboard Tab */}
+      {activeTab === 'dashboard' && (
+        <div className="space-y-6">
+          {dashboardLoading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading dashboard...</p>
+            </div>
+          ) : dashboardData ? (
+            <>
+              {/* Statistics Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Total Orders</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">
+                        {dashboardData.stats.totalOrders}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Total Spent</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">
+                        {formatPrice(dashboardData.stats.totalSpent, 'AMD')}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Pending Orders</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">
+                        {dashboardData.stats.pendingOrders}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Saved Addresses</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">
+                        {dashboardData.stats.addressesCount}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Recent Orders */}
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-semibold text-gray-900">Recent Orders</h2>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleTabChange('orders')}
+                  >
+                    View All
+                  </Button>
+                </div>
+                {dashboardData.recentOrders.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-600 mb-4">You haven't placed any orders yet</p>
+                    <Link href="/products">
+                      <Button variant="primary">Start Shopping</Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {dashboardData.recentOrders.map((order) => (
+                      <Link
+                        key={order.id}
+                        href={`/orders/${order.number}`}
+                        className="block border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-lg font-semibold text-gray-900">Order #{order.number}</h3>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
+                                {order.status}
+                              </span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                order.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' :
+                                order.paymentStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {order.paymentStatus}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              {order.itemsCount} item{order.itemsCount !== 1 ? 's' : ''} • Placed on {new Date(order.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="text-right ml-4">
+                            <p className="text-lg font-bold text-gray-900">
+                              {formatPrice(order.total, order.currency || 'AMD')}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">View Details →</p>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </Card>
+
+              {/* Quick Actions */}
+              <Card className="p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleTabChange('orders')}
+                    className="justify-start"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    View All Orders
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleTabChange('addresses')}
+                    className="justify-start"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Manage Addresses
+                  </Button>
+                  <Link href="/products">
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                      </svg>
+                      Continue Shopping
+                    </Button>
+                  </Link>
+                </div>
+              </Card>
+            </>
+          ) : (
+            <Card className="p-6">
+              <p className="text-gray-600 text-center py-8">Failed to load dashboard data</p>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* Personal Information Tab */}
       {activeTab === 'personal' && (

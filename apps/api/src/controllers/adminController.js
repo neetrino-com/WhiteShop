@@ -4,6 +4,7 @@ const Order = require('../models/Order');
 const Brand = require('../models/Brand');
 const Category = require('../models/Category');
 const Attribute = require('../models/Attribute');
+const Settings = require('../models/Settings');
 const { safeRedis } = require('../lib/redis');
 
 const adminController = {
@@ -286,6 +287,120 @@ const adminController = {
   },
 
   /**
+   * Update order status (admin only)
+   * PUT /api/v1/admin/orders/:id
+   */
+  async updateOrder(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { status, paymentStatus, fulfillmentStatus, adminNotes } = req.body;
+
+      console.log('📝 [ADMIN] Updating order:', id);
+      console.log('📝 [ADMIN] Update data:', JSON.stringify(req.body, null, 2));
+
+      const order = await Order.findById(id);
+
+      if (!order) {
+        return res.status(404).json({
+          type: 'https://api.shop.am/problems/not-found',
+          title: 'Order not found',
+          status: 404,
+          detail: `Order with id '${id}' does not exist`,
+          instance: req.path,
+        });
+      }
+
+      // Validate status if provided
+      const validStatuses = ['pending', 'processing', 'completed', 'cancelled'];
+      if (status && !validStatuses.includes(status)) {
+        return res.status(400).json({
+          type: 'https://api.shop.am/problems/validation-error',
+          title: 'Validation Error',
+          status: 400,
+          detail: `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+          instance: req.path,
+        });
+      }
+
+      // Track status changes
+      const oldStatus = order.status;
+      const oldPaymentStatus = order.paymentStatus;
+      const oldFulfillmentStatus = order.fulfillmentStatus;
+
+      // Update status
+      if (status !== undefined) {
+        order.status = status;
+        
+        // Set timestamps based on status
+        if (status === 'completed' && oldStatus !== 'completed') {
+          order.fulfilledAt = new Date();
+        }
+        if (status === 'cancelled' && oldStatus !== 'cancelled') {
+          order.cancelledAt = new Date();
+        }
+      }
+
+      // Update payment status
+      if (paymentStatus !== undefined) {
+        order.paymentStatus = paymentStatus;
+        if (paymentStatus === 'paid' && oldPaymentStatus !== 'paid') {
+          order.paidAt = new Date();
+        }
+      }
+
+      // Update fulfillment status
+      if (fulfillmentStatus !== undefined) {
+        order.fulfillmentStatus = fulfillmentStatus;
+      }
+
+      // Update admin notes
+      if (adminNotes !== undefined) {
+        order.adminNotes = adminNotes;
+      }
+
+      // Add event for status change
+      if (status && status !== oldStatus) {
+        if (!order.events) {
+          order.events = [];
+        }
+        order.events.push({
+          type: 'order.status.changed',
+          data: {
+            oldStatus,
+            newStatus: status,
+            note: `Status changed from ${oldStatus} to ${status}`,
+          },
+          userId: req.user?.id || null,
+          ipAddress: req.ip,
+        });
+      }
+
+      await order.save();
+
+      console.log('✅ [ADMIN] Order updated successfully:', id);
+      console.log('📊 [ADMIN] Updated order details:', {
+        id: order._id.toString(),
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        fulfillmentStatus: order.fulfillmentStatus,
+      });
+
+      res.json({
+        id: order._id.toString(),
+        number: order.number,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        fulfillmentStatus: order.fulfillmentStatus,
+        adminNotes: order.adminNotes,
+        updatedAt: order.updatedAt,
+      });
+    } catch (error) {
+      console.error('❌ [ADMIN] Error updating order:', error);
+      next(error);
+    }
+  },
+
+  /**
    * Get all products (admin only, including unpublished)
    * GET /api/v1/admin/products?page=&limit=&search=
    */
@@ -349,6 +464,7 @@ const adminController = {
             price: variant?.price || 0,
             stock: variant?.stock || 0,
             colorStocks: colorStocks, // Add color stocks array
+            discountPercent: product.discountPercent || 0,
             image: Array.isArray(product.media) && product.media[0]
               ? (typeof product.media[0] === 'string' ? product.media[0] : product.media[0].url)
               : null,
@@ -433,6 +549,13 @@ const adminController = {
             published: variant.published !== false,
           };
         }),
+        labels: (product.labels || []).map((label) => ({
+          id: label._id?.toString() || '',
+          type: label.type,
+          value: label.value,
+          position: label.position || 'top-left',
+          color: label.color || null,
+        })),
       };
 
       console.log('✅ [ADMIN] Product fetched successfully:', id);
@@ -468,6 +591,7 @@ const adminController = {
         locale = 'en',
         media = [],
         variants = [],
+        labels = [],
       } = req.body;
 
       // Validate required fields
@@ -553,10 +677,33 @@ const adminController = {
       let processedVariants = [];
       
       if (variants && Array.isArray(variants) && variants.length > 0) {
+        // Վալիդացիա - ստուգում ենք, որ բոլոր SKU-ները եզակի են նույն ապրանքի ներսում
+        const skuSet = new Set();
+        for (let i = 0; i < variants.length; i++) {
+          const variant = variants[i];
+          if (variant.sku && variant.sku.trim()) {
+            const sku = variant.sku.trim();
+            if (skuSet.has(sku)) {
+              return res.status(400).json({
+                type: 'https://api.shop.am/problems/validation-error',
+                title: 'Validation Error',
+                status: 400,
+                detail: `Վարիանտ ${i + 1}: SKU "${sku}" արդեն օգտագործված է այս ապրանքի մեջ: Ամեն վարիանտի SKU-ն պետք է եզակի լինի:`,
+                instance: req.path,
+              });
+            }
+            skuSet.add(sku);
+          }
+        }
+        
         // Use provided variants
         processedVariants = await Promise.all(
           variants.map(async (variant, index) => {
-            const variantSku = variant.sku || (sku ? `${sku}-${index + 1}` : `PROD-${Date.now()}-${index + 1}`);
+            // Generate unique SKU if not provided
+            let variantSku = variant.sku ? variant.sku.trim() : null;
+            if (!variantSku || variantSku === '') {
+              variantSku = sku ? `${sku}-${index + 1}` : `PROD-${Date.now()}-${index + 1}`;
+            }
             const options = [];
             
             // Process color attribute
@@ -688,7 +835,81 @@ const adminController = {
         productData.attributeIds = attributeIds;
       }
 
-      const product = await Product.create(productData);
+      // Process labels - convert 'discount' to 'percentage' and filter invalid types
+      if (labels && Array.isArray(labels) && labels.length > 0) {
+        const validLabelTypes = ['text', 'percentage'];
+        productData.labels = labels
+          .filter((label) => label && label.type && label.value)
+          .map((label) => {
+            // Convert 'discount' type to 'percentage' (backward compatibility)
+            let labelType = label.type;
+            if (labelType === 'discount') {
+              labelType = 'percentage';
+            }
+            // Filter out invalid types
+            if (!validLabelTypes.includes(labelType)) {
+              return null;
+            }
+            return {
+              type: labelType,
+              value: label.value,
+              position: label.position || 'top-left',
+              color: label.color || null,
+            };
+          })
+          .filter(label => label !== null);
+      }
+
+      // Create product with error handling
+      let product;
+      try {
+        product = await Product.create(productData);
+      } catch (createError) {
+        console.error('❌ [ADMIN] Error creating product:', createError);
+        
+        // Handle MongoDB duplicate key error
+        if (createError.code === 11000 || createError.name === 'MongoServerError') {
+          const errorMessage = createError.message || 'Database error';
+          let detail = 'Տվյալների բազայի սխալ: SKU-ն արդեն օգտագործված է:';
+          
+          // Try to extract SKU from error message
+          if (errorMessage.includes('variants.sku')) {
+            const skuMatch = errorMessage.match(/dup key:.*?variants\.sku[:\s]+([^\s}]+)/);
+            if (skuMatch && skuMatch[1]) {
+              detail = `SKU "${skuMatch[1]}" արդեն օգտագործված է այլ ապրանքի մեջ: Խնդրում ենք ընտրել այլ SKU:`;
+            }
+          }
+          
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/duplicate-key-error',
+            title: 'Duplicate Key Error',
+            status: 400,
+            detail: detail,
+            instance: req.path,
+          });
+        }
+        
+        // Handle other validation errors
+        if (createError.name === 'ValidationError') {
+          const validationErrors = Object.values(createError.errors || {}).map(err => err.message).join(', ');
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/validation-error',
+            title: 'Validation Error',
+            status: 400,
+            detail: `Վալիդացիայի սխալ: ${validationErrors}`,
+            instance: req.path,
+          });
+        }
+        
+        // Generic error
+        return res.status(500).json({
+          type: 'https://api.shop.am/problems/internal-server-error',
+          title: 'Internal Server Error',
+          status: 500,
+          detail: 'Սերվերի սխալ: Չհաջողվեց ստեղծել ապրանքը:',
+          instance: req.path,
+        });
+      }
 
       console.log('✅ [ADMIN] Product created successfully:', product._id.toString());
       console.log('📊 [ADMIN] Product details:', {
@@ -744,6 +965,13 @@ const adminController = {
         sku: variant?.sku || '',
         published: product.published,
         createdAt: product.createdAt,
+        labels: (product.labels || []).map((label) => ({
+          id: label._id?.toString() || '',
+          type: label.type,
+          value: label.value,
+          position: label.position || 'top-left',
+          color: label.color || null,
+        })),
       });
     } catch (error) {
       console.error('❌ [ADMIN] Error creating product:', error);
@@ -770,6 +998,8 @@ const adminController = {
         locale = 'en',
         media = [],
         variants = [],
+        labels,
+        discountPercent,
       } = req.body;
 
       console.log('📝 [ADMIN] Updating product:', id);
@@ -807,21 +1037,28 @@ const adminController = {
         }
       }
 
-      // Process media
-      if (Array.isArray(media)) {
-        const processedMedia = media
-          .filter((m) => m && (m.url || typeof m === 'string'))
-          .map((m, index) => {
-            if (typeof m === 'string') {
-              return { url: m, position: index, type: 'image' };
-            }
-            return { ...m, position: m.position || index, type: m.type || 'image' };
-          });
-        product.media = processedMedia;
+      // Process media - only update if media is explicitly provided
+      if (media !== undefined) {
+        if (Array.isArray(media)) {
+          const processedMedia = media
+            .filter((m) => m && (m.url || typeof m === 'string'))
+            .map((m, index) => {
+              if (typeof m === 'string') {
+                return { url: m, position: index, type: 'image' };
+              }
+              return { ...m, position: m.position || index, type: m.type || 'image' };
+            });
+          product.media = processedMedia;
+        } else {
+          // If media is explicitly set to null or empty, clear it
+          product.media = [];
+        }
       }
+      // If media is undefined, don't touch existing media
 
-      // Process variants if provided
-      if (variants && Array.isArray(variants) && variants.length > 0) {
+      // Process variants if provided - only update if variants are explicitly provided
+      if (variants !== undefined) {
+        if (Array.isArray(variants) && variants.length > 0) {
         // First, remove old variants to avoid SKU conflicts
         // We need to delete them from the database first to free up the SKU unique constraint
         if (product.variants && product.variants.length > 0) {
@@ -848,11 +1085,32 @@ const adminController = {
           return !existing;
         };
 
+        // Վալիդացիա - ստուգում ենք, որ բոլոր SKU-ները եզակի են նույն ապրանքի ներսում
+        const skuSet = new Set();
+        for (let i = 0; i < variants.length; i++) {
+          const variant = variants[i];
+          if (variant.sku && variant.sku.trim()) {
+            const sku = variant.sku.trim();
+            if (skuSet.has(sku)) {
+              return res.status(400).json({
+                type: 'https://api.shop.am/problems/validation-error',
+                title: 'Validation Error',
+                status: 400,
+                detail: `Վարիանտ ${i + 1}: SKU "${sku}" արդեն օգտագործված է այս ապրանքի մեջ: Ամեն վարիանտի SKU-ն պետք է եզակի լինի:`,
+                instance: req.path,
+              });
+            }
+            skuSet.add(sku);
+          }
+        }
+
         const processedVariants = await Promise.all(
           variants.map(async (variant, index) => {
             // Generate unique SKU if not provided or if provided SKU is not unique
-            let variantSku = variant.sku;
-            if (!variantSku) {
+            let variantSku = variant.sku ? variant.sku.trim() : null;
+            
+            // Եթե SKU-ն դատարկ է կամ null, գեներացնում ենք
+            if (!variantSku || variantSku === '') {
               variantSku = `${product.skuPrefix || 'PROD'}-${Date.now()}-${index + 1}`;
             } else {
               // Check if SKU is unique (excluding current product)
@@ -903,7 +1161,12 @@ const adminController = {
           })
         );
         product.variants = processedVariants;
+        } else {
+          // If variants is explicitly set to empty array, clear it
+          product.variants = [];
+        }
       }
+      // If variants is undefined, don't touch existing variants
 
       // Update other fields
       if (brandId !== undefined) product.brandId = brandId || null;
@@ -914,7 +1177,352 @@ const adminController = {
         product.publishedAt = published ? new Date() : null;
       }
 
-      await product.save();
+      // Վալիդացիա - ստուգում ենք, որ բոլոր variant-ների SKU-ները եզակի են
+      if (product.variants && product.variants.length > 0) {
+        const skuSet = new Set();
+        for (let i = 0; i < product.variants.length; i++) {
+          const variant = product.variants[i];
+          if (!variant.sku || variant.sku.trim() === '') {
+            // Եթե SKU-ն դատարկ է, գեներացնում ենք
+            variant.sku = `${product.skuPrefix || 'PROD'}-${Date.now()}-${i + 1}`;
+          } else {
+            variant.sku = variant.sku.trim();
+          }
+          
+          if (skuSet.has(variant.sku)) {
+            return res.status(400).json({
+              type: 'https://api.shop.am/problems/validation-error',
+              title: 'Validation Error',
+              status: 400,
+              detail: `Վարիանտ ${i + 1}: SKU "${variant.sku}" արդեն օգտագործված է այս ապրանքի մեջ: Ամեն վարիանտի SKU-ն պետք է եզակի լինի:`,
+              instance: req.path,
+            });
+          }
+          skuSet.add(variant.sku);
+        }
+      }
+
+      // Update labels
+      if (labels !== undefined) {
+        if (Array.isArray(labels) && labels.length > 0) {
+          const validLabelTypes = ['text', 'percentage'];
+          product.labels = labels
+            .filter((label) => label && label.type && label.value)
+            .map((label) => {
+              // Convert 'discount' type to 'percentage' (backward compatibility)
+              let labelType = label.type;
+              if (labelType === 'discount') {
+                labelType = 'percentage';
+              }
+              // Filter out invalid types
+              if (!validLabelTypes.includes(labelType)) {
+                return null;
+              }
+              return {
+                type: labelType,
+                value: label.value,
+                position: label.position || 'top-left',
+                color: label.color || null,
+              };
+            })
+            .filter(label => label !== null);
+        } else {
+          product.labels = [];
+        }
+      } else {
+        // If labels are not being updated, fix invalid label types from existing labels
+        if (product.labels && Array.isArray(product.labels)) {
+          const validLabelTypes = ['text', 'percentage'];
+          product.labels = product.labels.map((label) => {
+            if (!label || !label.type) return null;
+            // Convert 'discount' type to 'percentage' (backward compatibility)
+            if (label.type === 'discount') {
+              label.type = 'percentage';
+            }
+            // Filter out invalid types
+            if (!validLabelTypes.includes(label.type)) {
+              return null;
+            }
+            return label;
+          }).filter(label => label !== null);
+        }
+      }
+
+      // Update discount percent
+      if (discountPercent !== undefined) {
+        const discountValue = parseFloat(discountPercent);
+        if (isNaN(discountValue) || discountValue < 0 || discountValue > 100) {
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/validation-error',
+            title: 'Validation Error',
+            status: 400,
+            detail: 'Discount percent must be a number between 0 and 100',
+            instance: req.path,
+          });
+        }
+        product.discountPercent = discountValue;
+      }
+
+      // Ensure all labels are valid before saving (convert 'discount' to 'percentage')
+      if (product.labels && Array.isArray(product.labels)) {
+        const validLabelTypes = ['text', 'percentage'];
+        product.labels = product.labels.map((label) => {
+          if (!label || !label.type) return null;
+          // Convert 'discount' type to 'percentage' (backward compatibility)
+          if (label.type === 'discount') {
+            label.type = 'percentage';
+          }
+          // Filter out invalid types
+          if (!validLabelTypes.includes(label.type)) {
+            return null;
+          }
+          return label;
+        }).filter(label => label !== null);
+      }
+
+      // Ensure all variants have valid SKUs before saving (fix null SKU issue)
+      if (product.variants && Array.isArray(product.variants)) {
+        console.log('🔧 [ADMIN] Processing variants for SKU validation. Total variants:', product.variants.length);
+        
+        // Convert Mongoose documents to plain objects if needed
+        const variantsArray = product.variants.map(v => {
+          if (v && typeof v.toObject === 'function') {
+            return v.toObject();
+          }
+          return v;
+        });
+        
+        // Process all variants to ensure they have unique SKUs
+        const processedVariants = [];
+        const usedSkus = new Set();
+        const skusToCheck = [];
+        
+        // First pass: collect all SKUs that need validation and generate missing ones
+        for (let index = 0; index < variantsArray.length; index++) {
+          const variant = variantsArray[index];
+          
+          // Skip invalid variants
+          if (!variant) {
+            console.log(`⚠️ [ADMIN] Skipping invalid variant at index ${index}`);
+            continue;
+          }
+          
+          let variantSku = variant.sku;
+          
+          // Check for null, undefined, or empty string
+          const isSkuEmpty = variantSku === null || variantSku === undefined || 
+                            (typeof variantSku === 'string' && variantSku.trim() === '');
+          
+          if (isSkuEmpty) {
+            if (variantSku === null || variantSku === undefined) {
+              console.log(`⚠️ [ADMIN] Variant at index ${index} has null/undefined SKU, will generate new one`);
+            } else {
+              console.log(`⚠️ [ADMIN] Variant at index ${index} has empty SKU, will generate new one`);
+            }
+            
+            // If SKU is missing or empty, generate one
+            const baseSku = `${product.skuPrefix || 'PROD'}-${product._id.toString().slice(-6)}-${index + 1}`;
+            variantSku = baseSku;
+            
+            // Ensure uniqueness within this product
+            let counter = 1;
+            while (usedSkus.has(variantSku)) {
+              variantSku = `${baseSku}-${counter}`;
+              counter++;
+            }
+            
+            // Mark for uniqueness check
+            skusToCheck.push({ sku: variantSku, index, variant });
+          } else {
+            // Validate existing SKU (check if it's unique within this product first)
+            if (usedSkus.has(variantSku)) {
+              // Duplicate within same product - generate new one
+              const baseSku = `${product.skuPrefix || 'PROD'}-${product._id.toString().slice(-6)}-${index + 1}`;
+              variantSku = `${baseSku}-${Date.now()}-${index}`;
+              skusToCheck.push({ sku: variantSku, index, variant });
+            } else {
+              // Mark for uniqueness check across all products
+              skusToCheck.push({ sku: variantSku, index, variant, checkUniqueness: true });
+            }
+          }
+          
+          // Track used SKUs within this product
+          usedSkus.add(variantSku);
+        }
+        
+        // Second pass: check uniqueness across all products (batch check for better performance)
+        if (skusToCheck.length > 0) {
+          const skuList = skusToCheck.map(item => item.sku).filter(sku => sku && sku.trim() !== '');
+          
+          if (skuList.length > 0) {
+            // Find all existing products with these SKUs (excluding current product)
+            const existingProducts = await Product.find({
+              _id: { $ne: product._id },
+              'variants.sku': { $in: skuList },
+              deletedAt: null,
+            }).select('variants.sku').lean();
+            
+            // Build set of existing SKUs
+            const existingSkus = new Set();
+            existingProducts.forEach(p => {
+              if (p.variants && Array.isArray(p.variants)) {
+                p.variants.forEach(v => {
+                  if (v.sku) existingSkus.add(v.sku);
+                });
+              }
+            });
+            
+            // Update SKUs that conflict
+            for (const item of skusToCheck) {
+              if (item.checkUniqueness && existingSkus.has(item.sku)) {
+                // SKU already exists in another product - generate new one
+                const baseSku = `${product.skuPrefix || 'PROD'}-${product._id.toString().slice(-6)}-${item.index + 1}`;
+                item.sku = `${baseSku}-${Date.now()}-${item.index}`;
+                console.log(`⚠️ [ADMIN] SKU conflict detected, generated new SKU: ${item.sku}`);
+              }
+            }
+          }
+          
+          // Process all variants with their final SKUs
+          for (const item of skusToCheck) {
+            // Update variant with valid SKU
+            item.variant.sku = item.sku;
+            processedVariants.push(item.variant);
+          }
+        } else {
+          // If no variants need checking, still process all variants to ensure they have valid SKUs
+          for (let index = 0; index < variantsArray.length; index++) {
+            const variant = variantsArray[index];
+            if (!variant) continue;
+            
+            // Ensure variant has a valid SKU
+            if (!variant.sku || variant.sku === null || variant.sku === undefined || 
+                (typeof variant.sku === 'string' && variant.sku.trim() === '')) {
+              const baseSku = `${product.skuPrefix || 'PROD'}-${product._id.toString().slice(-6)}-${index + 1}`;
+              variant.sku = `${baseSku}-${Date.now()}-${index}`;
+              console.log(`⚠️ [ADMIN] Generated SKU for variant at index ${index}: ${variant.sku}`);
+            }
+            processedVariants.push(variant);
+          }
+        }
+        
+        // Final validation: ensure all variants have non-null, non-empty SKUs
+        const finalVariants = processedVariants.filter(v => {
+          if (!v) return false;
+          if (!v.sku || v.sku === null || v.sku === undefined || 
+              (typeof v.sku === 'string' && v.sku.trim() === '')) {
+            console.error(`❌ [ADMIN] Variant still has invalid SKU after processing, removing it:`, v);
+            return false;
+          }
+          return true;
+        });
+        
+        // Ensure all SKUs are unique within this product
+        const skuSet = new Set();
+        const uniqueVariants = [];
+        for (const variant of finalVariants) {
+          if (skuSet.has(variant.sku)) {
+            // Duplicate SKU found, generate new one
+            const baseSku = `${product.skuPrefix || 'PROD'}-${product._id.toString().slice(-6)}-${Date.now()}`;
+            variant.sku = `${baseSku}-${uniqueVariants.length}`;
+            console.log(`⚠️ [ADMIN] Fixed duplicate SKU, new SKU: ${variant.sku}`);
+          }
+          skuSet.add(variant.sku);
+          uniqueVariants.push(variant);
+        }
+        
+        product.variants = uniqueVariants;
+        
+        // Mark variants array as modified for Mongoose
+        product.markModified('variants');
+        
+        if (uniqueVariants.length > 0) {
+          console.log('🔧 [ADMIN] Final processed variants SKUs:', uniqueVariants.map(v => v.sku));
+        } else {
+          console.warn('⚠️ [ADMIN] No valid variants after processing!');
+        }
+      }
+
+      // Additional safety check before saving
+      if (product.variants && Array.isArray(product.variants)) {
+        const hasNullSkus = product.variants.some(v => 
+          v && (v.sku === null || v.sku === undefined || 
+               (typeof v.sku === 'string' && v.sku.trim() === ''))
+        );
+        if (hasNullSkus) {
+          console.error('❌ [ADMIN] Product still has variants with null/empty SKUs before save!');
+          // Force fix all null SKUs one more time
+          product.variants = product.variants.map((v, idx) => {
+            if (!v) return v;
+            if (!v.sku || v.sku === null || v.sku === undefined || 
+                (typeof v.sku === 'string' && v.sku.trim() === '')) {
+              v.sku = `${product.skuPrefix || 'PROD'}-${product._id.toString().slice(-6)}-${Date.now()}-${idx}`;
+              console.log(`🔧 [ADMIN] Last-minute SKU fix for variant ${idx}: ${v.sku}`);
+            }
+            return v;
+          }).filter(v => v && v.sku);
+          product.markModified('variants');
+        }
+      }
+
+      // Защита: убеждаемся, что media не потерялись
+      // Если media не были обновлены и они были в продукте, сохраняем их
+      if (media === undefined && product.media && Array.isArray(product.media) && product.media.length > 0) {
+        console.log('📸 [ADMIN] Preserving existing media:', product.media.length, 'items');
+        // Media уже есть в product, ничего не делаем
+      } else if (media === undefined && (!product.media || product.media.length === 0)) {
+        console.log('⚠️ [ADMIN] No media to preserve for product');
+      }
+
+      // Save product with error handling
+      try {
+        await product.save();
+      } catch (saveError) {
+        console.error('❌ [ADMIN] Error saving product:', saveError);
+        
+        // Handle MongoDB duplicate key error
+        if (saveError.code === 11000 || saveError.name === 'MongoServerError') {
+          const errorMessage = saveError.message || 'Database error';
+          let detail = 'Տվյալների բազայի սխալ: SKU-ն արդեն օգտագործված է:';
+          
+          // Try to extract SKU from error message
+          if (errorMessage.includes('variants.sku')) {
+            const skuMatch = errorMessage.match(/dup key:.*?variants\.sku[:\s]+([^\s}]+)/);
+            if (skuMatch && skuMatch[1]) {
+              detail = `SKU "${skuMatch[1]}" արդեն օգտագործված է այլ ապրանքի մեջ: Խնդրում ենք ընտրել այլ SKU:`;
+            }
+          }
+          
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/duplicate-key-error',
+            title: 'Duplicate Key Error',
+            status: 400,
+            detail: detail,
+            instance: req.path,
+          });
+        }
+        
+        // Handle other validation errors
+        if (saveError.name === 'ValidationError') {
+          const validationErrors = Object.values(saveError.errors || {}).map(err => err.message).join(', ');
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/validation-error',
+            title: 'Validation Error',
+            status: 400,
+            detail: `Վալիդացիայի սխալ: ${validationErrors}`,
+            instance: req.path,
+          });
+        }
+        
+        // Generic error
+        return res.status(500).json({
+          type: 'https://api.shop.am/problems/internal-server-error',
+          title: 'Internal Server Error',
+          status: 500,
+          detail: 'Սերվերի սխալ: Չհաջողվեց պահպանել ապրանքը:',
+          instance: req.path,
+        });
+      }
 
       console.log('✅ [ADMIN] Product updated successfully:', id);
       console.log('📊 [ADMIN] Updated product details:', {
@@ -923,21 +1531,29 @@ const adminController = {
         publishedAt: product.publishedAt,
       });
 
-      // Invalidate products cache
+      // Invalidate products cache - more aggressive invalidation for discount changes
       try {
-        const keys = await safeRedis.keys('products:*');
-        if (keys && keys.length > 0) {
-          for (const key of keys) {
+        // Invalidate all products list cache
+        const productListKeys = await safeRedis.keys('products:*');
+        if (productListKeys && productListKeys.length > 0) {
+          for (const key of productListKeys) {
             await safeRedis.del(key);
           }
-          console.log('🗑️ [ADMIN] Invalidated products cache:', keys.length, 'keys');
+          console.log('🗑️ [ADMIN] Invalidated products list cache:', productListKeys.length, 'keys');
         }
 
-        // Invalidate individual product cache
+        // Invalidate individual product cache for all languages
         if (product.translations && product.translations.length > 0) {
           for (const translation of product.translations) {
-            const productCacheKey = `product:${translation.slug}:*`;
-            const productKeys = await safeRedis.keys(productCacheKey);
+            // Invalidate for all possible languages
+            const languages = ['en', 'hy', 'ru'];
+            for (const lang of languages) {
+              const productCacheKey = `product:${translation.slug}:${lang}`;
+              await safeRedis.del(productCacheKey);
+            }
+            // Also try pattern matching
+            const productCachePattern = `product:${translation.slug}:*`;
+            const productKeys = await safeRedis.keys(productCachePattern);
             if (productKeys && productKeys.length > 0) {
               for (const key of productKeys) {
                 await safeRedis.del(key);
@@ -945,6 +1561,7 @@ const adminController = {
             }
           }
         }
+        console.log('🗑️ [ADMIN] Cache invalidation completed for product:', id);
       } catch (cacheError) {
         console.warn('⚠️ [ADMIN] Cache invalidation error (non-critical):', cacheError.message);
       }
@@ -964,9 +1581,116 @@ const adminController = {
         published: product.published,
         publishedAt: product.publishedAt,
         updatedAt: product.updatedAt,
+        labels: (product.labels || []).map((label) => ({
+          id: label._id?.toString() || '',
+          type: label.type,
+          value: label.value,
+          position: label.position || 'top-left',
+          color: label.color || null,
+        })),
       });
     } catch (error) {
       console.error('❌ [ADMIN] Error updating product:', error);
+      next(error);
+    }
+  },
+
+  /**
+   * Update only product discount percent (admin only)
+   * PATCH /api/v1/admin/products/:id/discount
+   */
+  async updateProductDiscount(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { discountPercent } = req.body;
+
+      console.log('⚙️ [ADMIN] Updating product discount only:', id, discountPercent);
+
+      // Validate discountPercent
+      if (discountPercent === undefined) {
+        return res.status(400).json({
+          type: 'https://api.shop.am/problems/validation-error',
+          title: 'Validation Error',
+          status: 400,
+          detail: 'discountPercent is required',
+          instance: req.path,
+        });
+      }
+
+      const discountValue = parseFloat(discountPercent);
+      if (isNaN(discountValue) || discountValue < 0 || discountValue > 100) {
+        return res.status(400).json({
+          type: 'https://api.shop.am/problems/validation-error',
+          title: 'Validation Error',
+          status: 400,
+          detail: 'Discount percent must be a number between 0 and 100',
+          instance: req.path,
+        });
+      }
+
+      // Use findOneAndUpdate to update only discountPercent field
+      // This ensures all other fields remain unchanged
+      const updatedProduct = await Product.findOneAndUpdate(
+        { _id: id },
+        { $set: { discountPercent: discountValue } },
+        { new: true, runValidators: true }
+      );
+
+      if (!updatedProduct) {
+        return res.status(404).json({
+          type: 'https://api.shop.am/problems/not-found',
+          title: 'Product not found',
+          status: 404,
+          detail: `Product with id '${id}' does not exist`,
+          instance: req.path,
+        });
+      }
+
+      console.log('✅ [ADMIN] Product discount updated successfully:', id, discountValue);
+
+      // Invalidate products cache
+      try {
+        const productListKeys = await safeRedis.keys('products:*');
+        if (productListKeys && productListKeys.length > 0) {
+          for (const key of productListKeys) {
+            await safeRedis.del(key);
+          }
+          console.log('🗑️ [ADMIN] Invalidated products list cache:', productListKeys.length, 'keys');
+        }
+
+        if (updatedProduct.translations && updatedProduct.translations.length > 0) {
+          for (const translation of updatedProduct.translations) {
+            const languages = ['en', 'hy', 'ru'];
+            for (const lang of languages) {
+              const productCacheKey = `product:${translation.slug}:${lang}`;
+              await safeRedis.del(productCacheKey);
+            }
+            const productCachePattern = `product:${translation.slug}:*`;
+            const productKeys = await safeRedis.keys(productCachePattern);
+            if (productKeys && productKeys.length > 0) {
+              for (const key of productKeys) {
+                await safeRedis.del(key);
+              }
+            }
+          }
+        }
+        console.log('🗑️ [ADMIN] Cache invalidation completed for product:', id);
+      } catch (cacheError) {
+        console.warn('⚠️ [ADMIN] Cache invalidation error (non-critical):', cacheError.message);
+      }
+
+      const translation = updatedProduct.translations?.[0];
+      const variant = updatedProduct.variants?.[0];
+
+      res.json({
+        id: updatedProduct._id.toString(),
+        slug: translation?.slug || '',
+        title: translation?.title || '',
+        discountPercent: updatedProduct.discountPercent,
+        updatedAt: updatedProduct.updatedAt,
+      });
+    } catch (error) {
+      console.error('❌ [ADMIN] Error updating product discount:', error);
       next(error);
     }
   },
@@ -991,6 +1715,23 @@ const adminController = {
           detail: `Product with id '${id}' does not exist`,
           instance: req.path,
         });
+      }
+
+      // Fix invalid label types before saving (convert 'discount' to 'percentage')
+      if (product.labels && Array.isArray(product.labels)) {
+        const validLabelTypes = ['text', 'percentage'];
+        product.labels = product.labels.map((label) => {
+          if (!label || !label.type) return null;
+          // Convert 'discount' type to 'percentage' (backward compatibility)
+          if (label.type === 'discount') {
+            label.type = 'percentage';
+          }
+          // Filter out invalid types
+          if (!validLabelTypes.includes(label.type)) {
+            return null;
+          }
+          return label;
+        }).filter(label => label !== null);
       }
 
       // Soft delete - set deletedAt timestamp
@@ -1356,6 +2097,104 @@ const adminController = {
       res.json({ data: activity });
     } catch (error) {
       console.error('❌ [ADMIN] Error fetching user activity:', error);
+      next(error);
+    }
+  },
+
+  /**
+   * Get all settings (admin only)
+   * GET /api/v1/admin/settings
+   */
+  async getSettings(req, res, next) {
+    try {
+      console.log('⚙️ [ADMIN] Fetching settings...');
+
+      const settings = await Settings.find().lean();
+      
+      // Convert array to object for easier access
+      const settingsObj = {};
+      settings.forEach((setting) => {
+        settingsObj[setting.key] = setting.value;
+      });
+
+      // Set defaults if not exists
+      if (settingsObj.globalDiscount === undefined) {
+        settingsObj.globalDiscount = 0;
+      }
+
+      console.log('✅ [ADMIN] Settings fetched:', settingsObj);
+      res.json(settingsObj);
+    } catch (error) {
+      console.error('❌ [ADMIN] Error fetching settings:', error);
+      next(error);
+    }
+  },
+
+  /**
+   * Update settings (admin only)
+   * PUT /api/v1/admin/settings
+   */
+  async updateSettings(req, res, next) {
+    try {
+      console.log('⚙️ [ADMIN] Updating settings...');
+      console.log('⚙️ [ADMIN] Update data:', JSON.stringify(req.body, null, 2));
+
+      const { globalDiscount } = req.body;
+
+      // Validate globalDiscount
+      if (globalDiscount !== undefined) {
+        const discountValue = parseFloat(globalDiscount);
+        if (isNaN(discountValue) || discountValue < 0 || discountValue > 100) {
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/validation-error',
+            title: 'Validation Error',
+            status: 400,
+            detail: 'Global discount must be a number between 0 and 100',
+            instance: req.path,
+          });
+        }
+
+        // Update or create globalDiscount setting
+        await Settings.findOneAndUpdate(
+          { key: 'globalDiscount' },
+          { 
+            key: 'globalDiscount',
+            value: discountValue,
+            description: 'Global discount percentage applied to all products (0-100)',
+          },
+          { upsert: true, new: true }
+        );
+
+        console.log('✅ [ADMIN] Global discount updated:', discountValue);
+      }
+
+      // Invalidate products cache to apply new discount
+      try {
+        const keys = await safeRedis.keys('products:*');
+        if (keys && keys.length > 0) {
+          for (const key of keys) {
+            await safeRedis.del(key);
+          }
+          console.log('🗑️ [ADMIN] Invalidated products cache:', keys.length, 'keys');
+        }
+      } catch (cacheError) {
+        console.warn('⚠️ [ADMIN] Cache invalidation error (non-critical):', cacheError.message);
+      }
+
+      // Return updated settings
+      const settings = await Settings.find().lean();
+      const settingsObj = {};
+      settings.forEach((setting) => {
+        settingsObj[setting.key] = setting.value;
+      });
+
+      if (settingsObj.globalDiscount === undefined) {
+        settingsObj.globalDiscount = 0;
+      }
+
+      res.json(settingsObj);
+    } catch (error) {
+      console.error('❌ [ADMIN] Error updating settings:', error);
       next(error);
     }
   },

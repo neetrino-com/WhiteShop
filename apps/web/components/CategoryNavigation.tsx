@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { apiClient } from '../lib/api-client';
 import { getStoredLanguage } from '../lib/language';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Category {
   id: string;
@@ -101,6 +102,9 @@ function CategoryNavigationContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryProducts, setCategoryProducts] = useState<Record<string, Product | null>>({});
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
   const currentCategory = searchParams?.get('category');
 
   useEffect(() => {
@@ -134,12 +138,16 @@ function CategoryNavigationContent() {
       // Fetch products for each category
       const categoryPromises = allCategoriesWithAll.map(async (category) => {
         try {
+          const params: Record<string, string> = {
+            limit: '5',
+            lang: language,
+          };
+          if (category.slug !== 'all') {
+            params.category = category.slug;
+          }
+
           const productsResponse = await apiClient.get<ProductsResponse>('/api/v1/products', {
-            params: {
-              category: category.slug === 'all' ? undefined : category.slug,
-              limit: '5',
-              lang: language,
-            },
+            params,
           });
           // Get first product with image
           const productWithImage = productsResponse.data?.find(p => p.image) || productsResponse.data?.[0] || null;
@@ -174,6 +182,68 @@ function CategoryNavigationContent() {
     router.push(`/products?${params.toString()}`);
   };
 
+  const updateScrollButtons = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      console.warn('[CategoryNavigation] Container not found for updateScrollButtons');
+      return;
+    }
+
+    const scrollLeft = container.scrollLeft;
+    const scrollWidth = container.scrollWidth;
+    const clientWidth = container.clientWidth;
+    
+    const canLeft = scrollLeft > 8;
+    const canRight = scrollLeft + clientWidth < scrollWidth - 8;
+
+    console.info('[CategoryNavigation] Update scroll buttons:', {
+      scrollLeft,
+      scrollWidth,
+      clientWidth,
+      canLeft,
+      canRight
+    });
+
+    setCanScrollLeft(canLeft);
+    setCanScrollRight(canRight);
+  }, []);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleResize = () => {
+      // Небольшая задержка для корректного расчета размеров после ресайза
+      setTimeout(() => updateScrollButtons(), 100);
+    };
+    
+    const handleScroll = () => {
+      updateScrollButtons();
+    };
+    
+    container.addEventListener('scroll', handleScroll);
+    window.addEventListener('resize', handleResize);
+    
+    // Инициализация с небольшой задержкой для корректного расчета размеров
+    setTimeout(() => {
+      updateScrollButtons();
+    }, 100);
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [updateScrollButtons]);
+
+  useEffect(() => {
+    // Обновляем состояние кнопок после загрузки категорий и продуктов
+    if (!loading && categories.length > 0) {
+      setTimeout(() => {
+        updateScrollButtons();
+      }, 200);
+    }
+  }, [categories.length, Object.keys(categoryProducts).length, loading, updateScrollButtons]);
+
   if (loading) {
     return (
       <div className="bg-white border-b border-gray-200 py-4">
@@ -200,10 +270,60 @@ function CategoryNavigationContent() {
   // Limit to first 10 categories for horizontal navigation
   const displayCategories = allCategoriesWithAll.slice(0, 10);
 
+  const scrollByAmount = (amount: number) => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      console.warn('[CategoryNavigation] Container not found for scrolling');
+      return;
+    }
+    
+    const scrollLeftBefore = container.scrollLeft;
+    console.info('[CategoryNavigation] Scrolling:', { 
+      direction: amount > 0 ? 'right' : 'left', 
+      amount, 
+      scrollLeftBefore,
+      scrollWidth: container.scrollWidth,
+      clientWidth: container.clientWidth
+    });
+    
+    container.scrollBy({ left: amount, behavior: 'smooth' });
+    
+    // Обновляем состояние после небольшой задержки для плавной прокрутки
+    setTimeout(() => {
+      updateScrollButtons();
+    }, 100);
+  };
+
   return (
     <div className="bg-white border-b border-gray-200 py-6">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-6 md:gap-8 overflow-x-auto scrollbar-hide pb-2">
+        <div className="relative px-8">
+          {/* Левая стрелка - всегда видна, но неактивна когда нельзя прокрутить */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.info('[CategoryNavigation] Left arrow clicked, canScrollLeft:', canScrollLeft);
+              if (canScrollLeft) {
+                scrollByAmount(-220);
+              }
+            }}
+            disabled={!canScrollLeft}
+            className={`flex absolute left-0 top-1/2 -translate-y-1/2 -translate-x-8 md:-translate-x-12 z-10 w-12 h-12 items-center justify-center bg-transparent hover:bg-transparent transition-all ${
+              canScrollLeft 
+                ? 'text-gray-900 hover:scale-110 cursor-pointer' 
+                : 'text-gray-300 cursor-not-allowed opacity-50'
+            }`}
+            aria-label="Scroll categories left"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <div
+            ref={scrollContainerRef}
+            className="flex items-center gap-6 md:gap-8 overflow-x-auto scrollbar-hide pb-2"
+            style={{ scrollBehavior: 'smooth' }}
+          >
           {displayCategories.map((category) => {
             const isActive = category.slug === 'all' 
               ? !currentCategory 
@@ -271,6 +391,28 @@ function CategoryNavigationContent() {
               </Link>
             );
           })}
+          </div>
+          {/* Правая стрелка - всегда видна, но неактивна когда нельзя прокрутить */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.info('[CategoryNavigation] Right arrow clicked, canScrollRight:', canScrollRight);
+              if (canScrollRight) {
+                scrollByAmount(220);
+              }
+            }}
+            disabled={!canScrollRight}
+            className={`flex absolute right-0 top-1/2 -translate-y-1/2 translate-x-8 md:translate-x-12 z-10 w-12 h-12 items-center justify-center bg-transparent hover:bg-transparent transition-all ${
+              canScrollRight 
+                ? 'text-gray-900 hover:scale-110 cursor-pointer' 
+                : 'text-gray-300 cursor-not-allowed opacity-50'
+            }`}
+            aria-label="Scroll categories right"
+          >
+            <ChevronRight className="w-6 h-6" />
+          </button>
         </div>
       </div>
     </div>

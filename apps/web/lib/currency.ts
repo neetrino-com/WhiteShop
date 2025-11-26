@@ -37,9 +37,9 @@ export function formatPrice(price: number, currency: CurrencyCode = 'USD'): stri
   const currencyInfo = CURRENCIES[currency];
   const convertedPrice = price * currencyInfo.rate;
   
-  // For AMD, RUB, GEL - show without decimals, for USD show 2 decimals
-  const minimumFractionDigits = currency === 'USD' ? 2 : 0;
-  const maximumFractionDigits = currency === 'USD' ? 2 : 0;
+  // Show all currencies without decimals (remove .00)
+  const minimumFractionDigits = 0;
+  const maximumFractionDigits = 0;
   
   return new Intl.NumberFormat('en-US', {
     style: 'currency',

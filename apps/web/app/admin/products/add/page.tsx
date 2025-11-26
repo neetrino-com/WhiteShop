@@ -46,6 +46,14 @@ interface Variant {
   imageUrl: string;
 }
 
+interface ProductLabel {
+  id?: string;
+  type: 'text' | 'percentage';
+  value: string;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  color?: string | null;
+}
+
 interface ProductData {
   id: string;
   title: string;
@@ -57,6 +65,7 @@ interface ProductData {
   categoryIds?: string[];
   published: boolean;
   media?: string[];
+  labels?: ProductLabel[];
   variants?: Array<{
     id?: string;
     price: string;
@@ -92,6 +101,7 @@ function AddProductPageContent() {
     published: false,
     imageUrls: [] as string[],
     variants: [] as Variant[],
+    labels: [] as ProductLabel[],
   });
 
   useEffect(() => {
@@ -189,6 +199,13 @@ function AddProductPageContent() {
             published: product.published || false,
             imageUrls: product.media || [],
             variants: Array.from(variantMap.values()),
+            labels: (product.labels || []).map((label: any) => ({
+              id: label.id || '',
+              type: label.type || 'text',
+              value: label.value || '',
+              position: label.position || 'top-left',
+              color: label.color || null,
+            })),
           });
           
           console.log('✅ [ADMIN] Product loaded for edit');
@@ -409,6 +426,35 @@ function AddProductPageContent() {
     });
   };
 
+  // Label management functions
+  const addLabel = () => {
+    const newLabel: ProductLabel = {
+      type: 'text',
+      value: '',
+      position: 'top-left',
+      color: null,
+    };
+    setFormData((prev) => ({
+      ...prev,
+      labels: [...prev.labels, newLabel],
+    }));
+  };
+
+  const removeLabel = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      labels: prev.labels.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateLabel = (index: number, field: keyof ProductLabel, value: any) => {
+    setFormData((prev) => {
+      const newLabels = [...prev.labels];
+      newLabels[index] = { ...newLabels[index], [field]: value };
+      return { ...prev, labels: newLabels };
+    });
+  };
+
   const getColorAttribute = () => attributes.find((attr) => attr.key === 'color');
   const getSizeAttribute = () => attributes.find((attr) => attr.key === 'size');
 
@@ -427,13 +473,31 @@ function AddProductPageContent() {
       }
 
       // Validate all variants
+      const skuSet = new Set<string>();
       for (const variant of formData.variants) {
+        const variantIndex = formData.variants.indexOf(variant) + 1;
+        
         const priceValue = parseFloat(variant.price);
         if (!variant.price || isNaN(priceValue) || priceValue <= 0) {
-          alert(`Variant ${formData.variants.indexOf(variant) + 1}: Please enter a valid price greater than 0`);
+          alert(`Վարիանտ ${variantIndex}: Խնդրում ենք մուտքագրել վավեր գին, որը 0-ից մեծ է`);
           setLoading(false);
           return;
         }
+        
+        // Validate SKU - must be unique within product
+        const variantSku = variant.sku ? variant.sku.trim() : '';
+        if (!variantSku || variantSku === '') {
+          alert(`Վարիանտ ${variantIndex}: SKU-ն պարտադիր է: Խնդրում ենք մուտքագրել SKU կամ օգտագործել "Գեներացնել" կոճակը`);
+          setLoading(false);
+          return;
+        }
+        
+        if (skuSet.has(variantSku)) {
+          alert(`Վարիանտ ${variantIndex}: SKU "${variantSku}" արդեն օգտագործված է այս ապրանքի մեջ: Ամեն վարիանտի SKU-ն պետք է եզակի լինի`);
+          setLoading(false);
+          return;
+        }
+        skuSet.add(variantSku);
         
         // Validate sizes and stocks for clothing and shoes
         if (isClothingCategory()) {
@@ -526,12 +590,19 @@ function AddProductPageContent() {
                 ? `-${colorIndex + 1}-${sizeIndex + 1}` 
                 : '';
               
+              // Generate SKU if not provided
+              let finalSku = variant.sku ? `${variant.sku.trim()}${skuSuffix}` : undefined;
+              if (!finalSku || finalSku === '') {
+                const baseSlug = formData.slug || 'PROD';
+                finalSku = `${baseSlug.toUpperCase()}-${Date.now()}-${colorIndex + 1}-${sizeIndex + 1}`;
+              }
+              
               variants.push({
                 ...baseVariantData,
                 color: color,
                 size: size,
                 stock: parseInt(stockForVariant) || 0,
-                sku: variant.sku ? `${variant.sku}${skuSuffix}` : undefined,
+                sku: finalSku,
               });
             });
           });
@@ -542,11 +613,18 @@ function AddProductPageContent() {
             const stockForColor = colorStocks[color] || variant.stock || '0';
             const skuSuffix = colors.length > 1 ? `-${colorIndex + 1}` : '';
             
+            // Generate SKU if not provided
+            let finalSku = variant.sku ? `${variant.sku.trim()}${skuSuffix}` : undefined;
+            if (!finalSku || finalSku === '') {
+              const baseSlug = formData.slug || 'PROD';
+              finalSku = `${baseSlug.toUpperCase()}-${Date.now()}-${colorIndex + 1}`;
+            }
+            
             variants.push({
               ...baseVariantData,
               color: color,
               stock: parseInt(stockForColor) || 0,
-              sku: variant.sku ? `${variant.sku}${skuSuffix}` : undefined,
+              sku: finalSku,
             });
           });
         }
@@ -556,23 +634,57 @@ function AddProductPageContent() {
             const stockForSize = sizeStocks[size] || variant.stock || '0';
             const skuSuffix = sizes.length > 1 ? `-${sizeIndex + 1}` : '';
             
+            // Generate SKU if not provided
+            let finalSku = variant.sku ? `${variant.sku.trim()}${skuSuffix}` : undefined;
+            if (!finalSku || finalSku === '') {
+              const baseSlug = formData.slug || 'PROD';
+              finalSku = `${baseSlug.toUpperCase()}-${Date.now()}-${sizeIndex + 1}`;
+            }
+            
             variants.push({
               ...baseVariantData,
               size: size,
               stock: parseInt(stockForSize) || 0,
-              sku: variant.sku ? `${variant.sku}${skuSuffix}` : undefined,
+              sku: finalSku,
             });
           });
         } 
         // If no colors and no sizes, create single variant
         else {
+          // Generate SKU if not provided
+          let finalSku = variant.sku ? variant.sku.trim() : undefined;
+          if (!finalSku || finalSku === '') {
+            const baseSlug = formData.slug || 'PROD';
+            finalSku = `${baseSlug.toUpperCase()}-${Date.now()}-1`;
+          }
+          
           variants.push({
             ...baseVariantData,
             stock: parseInt(variant.stock) || 0,
-            sku: variant.sku || undefined,
+            sku: finalSku,
           });
         }
       });
+
+      // Final validation - ensure all SKUs are unique
+      const finalSkuSet = new Set<string>();
+      for (let i = 0; i < variants.length; i++) {
+        const variant = variants[i];
+        if (!variant.sku || variant.sku.trim() === '') {
+          // Generate SKU if still missing
+          const baseSlug = formData.slug || 'PROD';
+          variant.sku = `${baseSlug.toUpperCase()}-${Date.now()}-${i + 1}`;
+        } else {
+          variant.sku = variant.sku.trim();
+        }
+        
+        if (finalSkuSet.has(variant.sku)) {
+          // Duplicate SKU found, generate new one
+          const baseSlug = formData.slug || 'PROD';
+          variant.sku = `${baseSlug.toUpperCase()}-${Date.now()}-${i + 1}-${Math.random().toString(36).substr(2, 4)}`;
+        }
+        finalSkuSet.add(variant.sku);
+      }
 
       // Prepare payload
       const payload: any = {
@@ -593,25 +705,61 @@ function AddProductPageContent() {
         payload.media = media;
       }
 
+      // Add labels if provided
+      if (formData.labels && formData.labels.length > 0) {
+        payload.labels = formData.labels
+          .filter((label) => label.value && label.value.trim() !== '')
+          .map((label) => ({
+            type: label.type,
+            value: label.value.trim(),
+            position: label.position,
+            color: label.color || null,
+          }));
+      }
+
       console.log('📤 [ADMIN] Sending payload:', JSON.stringify(payload, null, 2));
       
       if (isEditMode && productId) {
         // Update existing product
         const product = await apiClient.put(`/api/v1/admin/products/${productId}`, payload);
         console.log('✅ [ADMIN] Product updated:', product);
-        alert('Product updated successfully!');
+        alert('Ապրանքը հաջողությամբ թարմացվեց!');
       } else {
         // Create new product
         const product = await apiClient.post('/api/v1/admin/products', payload);
         console.log('✅ [ADMIN] Product created:', product);
-        alert('Product created successfully!');
+        alert('Ապրանքը հաջողությամբ ստեղծվեց!');
       }
       
       router.push('/admin/products');
     } catch (err: any) {
-      console.error('❌ [ADMIN] Error creating product:', err);
-      const errorMessage = err.response?.data?.detail || err.message || 'Failed to create product';
-      alert(`Error: ${errorMessage}`);
+      console.error('❌ [ADMIN] Error saving product:', err);
+      
+      // Extract error message from API response
+      let errorMessage = isEditMode ? 'Չհաջողվեց թարմացնել ապրանքը' : 'Չհաջողվեց ստեղծել ապրանքը';
+      
+      // Try different error response formats
+      if (err?.data?.detail) {
+        errorMessage = err.data.detail;
+      } else if (err?.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err?.message) {
+        // If error message contains HTML, try to extract meaningful text
+        if (err.message.includes('<!DOCTYPE') || err.message.includes('<html')) {
+          // Try to extract MongoDB error from HTML
+          const mongoErrorMatch = err.message.match(/MongoServerError[^<]+/);
+          if (mongoErrorMatch) {
+            errorMessage = `Տվյալների բազայի սխալ: ${mongoErrorMatch[0]}`;
+          } else {
+            errorMessage = 'Տվյալների բազայի սխալ: SKU-ն արդեն օգտագործված է կամ այլ սխալ:';
+          }
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      // Show user-friendly error message
+      alert(`Սխալ: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -815,6 +963,114 @@ function AddProductPageContent() {
               </div>
             </div>
 
+            {/* Product Labels */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Product Labels</h2>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addLabel}
+                >
+                  + Add Label
+                </Button>
+              </div>
+              {formData.labels.length === 0 ? (
+                <div className="text-center py-4 border-2 border-dashed border-gray-300 rounded-lg">
+                  <p className="text-gray-500 mb-2">No labels added yet</p>
+                  <p className="text-sm text-gray-400">Add labels like "New Product", "Hot", "Sale" or percentage discounts like "50%"</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {formData.labels.map((label, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-medium text-gray-900">Label {index + 1}</h3>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => removeLabel(index)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Label Type */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Type *
+                          </label>
+                          <select
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={label.type}
+                            onChange={(e) => updateLabel(index, 'type', e.target.value as 'text' | 'percentage')}
+                            required
+                          >
+                            <option value="text">Text (New Product, Hot, Sale, etc.)</option>
+                            <option value="percentage">Percentage (50%, 30%, etc.)</option>
+                          </select>
+                        </div>
+
+                        {/* Label Value */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Value *
+                          </label>
+                          <Input
+                            type="text"
+                            value={label.value}
+                            onChange={(e) => updateLabel(index, 'value', e.target.value)}
+                            placeholder={label.type === 'percentage' ? '50 (will be auto-updated)' : 'New Product'}
+                            required
+                            className="w-full"
+                          />
+                          {label.type === 'percentage' && (
+                            <p className="mt-1 text-xs text-blue-600 font-medium">
+                              ⓘ This value will be automatically updated based on the product's discount percentage. You can enter any number here as a placeholder.
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Label Position */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Position *
+                          </label>
+                          <select
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={label.position}
+                            onChange={(e) => updateLabel(index, 'position', e.target.value)}
+                            required
+                          >
+                            <option value="top-left">Top Left</option>
+                            <option value="top-right">Top Right</option>
+                            <option value="bottom-left">Bottom Left</option>
+                            <option value="bottom-right">Bottom Right</option>
+                          </select>
+                        </div>
+
+                        {/* Label Color (Optional) */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Color (Optional)
+                          </label>
+                          <Input
+                            type="text"
+                            value={label.color || ''}
+                            onChange={(e) => updateLabel(index, 'color', e.target.value || null)}
+                            placeholder="#FF0000 or leave empty for default"
+                            className="w-full"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">Hex color code (e.g., #FF0000) or leave empty</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Product Variants */}
             <div>
               <div className="flex items-center justify-between mb-4">
@@ -947,15 +1203,34 @@ function AddProductPageContent() {
                         {/* SKU */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            SKU
+                            SKU *
                           </label>
-                          <Input
-                            type="text"
-                            value={variant.sku}
-                            onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
-                            placeholder="Auto-generated if empty"
-                            className="w-full"
-                          />
+                          <div className="flex gap-2">
+                            <Input
+                              type="text"
+                              value={variant.sku}
+                              onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
+                              placeholder="Auto-generated if empty"
+                              className="flex-1"
+                              required
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                // Generate unique SKU based on product title and variant index
+                                const baseSlug = formData.slug || 'PROD';
+                                const variantIndex = formData.variants.findIndex(v => v.id === variant.id);
+                                const generatedSku = `${baseSlug.toUpperCase()}-${Date.now()}-${variantIndex + 1}`;
+                                updateVariant(variant.id, 'sku', generatedSku);
+                              }}
+                              className="whitespace-nowrap"
+                              title="Գեներացնել SKU"
+                            >
+                              Գեներացնել
+                            </Button>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500">SKU-ն պետք է եզակի լինի ամեն վարիանտի համար</p>
                         </div>
 
                         {/* Color - Multiple selection with stock per color */}

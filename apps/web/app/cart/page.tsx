@@ -41,6 +41,8 @@ interface Cart {
   itemsCount: number;
 }
 
+const CART_KEY = 'shop_cart_guest';
+
 export default function CartPage() {
   const { isLoggedIn } = useAuth();
   const [cart, setCart] = useState<Cart | null>(null);
@@ -85,12 +87,141 @@ export default function CartPage() {
     try {
       setLoading(true);
       
+      // Եթե օգտատերը գրանցված չէ, օգտագործում ենք localStorage
       if (!isLoggedIn) {
-        setCart(null);
-        setLoading(false);
+        if (typeof window === 'undefined') {
+          setCart(null);
+          setLoading(false);
+          return;
+        }
+
+        try {
+          const stored = localStorage.getItem(CART_KEY);
+          const guestCart: Array<{ productId: string; productSlug?: string; variantId: string; quantity: number }> = stored ? JSON.parse(stored) : [];
+          
+          if (guestCart.length === 0) {
+            setCart(null);
+            setLoading(false);
+            return;
+          }
+
+          // Ստանում ենք ապրանքների տվյալները API-ից
+          const itemsWithDetails: Array<{ item: CartItem | null; shouldRemove: boolean }> = await Promise.all(
+            guestCart.map(async (item, index) => {
+              try {
+                // Եթե productSlug-ը չկա, ապրանքը չի կարող ստացվել (API-ն ակնկալում է slug)
+                if (!item.productSlug) {
+                  console.warn(`Product ${item.productId} does not have slug, removing from cart`);
+                  return { item: null, shouldRemove: true };
+                }
+
+                // Ստանում ենք ապրանքի տվյալները slug-ով
+                const productData = await apiClient.get<{
+                  id: string;
+                  slug: string;
+                  translations?: Array<{ title: string; locale: string }>;
+                  media?: Array<{ url?: string; src?: string } | string>;
+                  variants?: Array<{
+                    _id: string;
+                    id: string;
+                    sku: string;
+                    price: number;
+                  }>;
+                }>(`/api/v1/products/${item.productSlug}`);
+
+                const variant = productData.variants?.find(v => 
+                  (v._id?.toString() || v.id) === item.variantId
+                ) || productData.variants?.[0];
+
+                if (!variant) {
+                  console.warn(`Variant ${item.variantId} not found for product ${item.productId}`);
+                  return { item: null, shouldRemove: true };
+                }
+
+                const translation = productData.translations?.[0];
+                const imageUrl = productData.media?.[0] 
+                  ? (typeof productData.media[0] === 'string' 
+                      ? productData.media[0] 
+                      : productData.media[0].url || productData.media[0].src)
+                  : null;
+
+                return {
+                  item: {
+                    id: `${item.productId}-${item.variantId}-${index}`,
+                    variant: {
+                      id: variant._id?.toString() || variant.id,
+                      sku: variant.sku || '',
+                      product: {
+                        id: productData.id,
+                        title: translation?.title || 'Product',
+                        slug: productData.slug,
+                        image: imageUrl,
+                      },
+                    },
+                    quantity: item.quantity,
+                    price: variant.price,
+                    total: variant.price * item.quantity,
+                  },
+                  shouldRemove: false,
+                };
+              } catch (error: any) {
+                // Եթե ապրանքը չի գտնվում (404), հեռացնում ենք այն localStorage-ից
+                if (error?.status === 404 || error?.statusCode === 404) {
+                  console.warn(`Product ${item.productId} not found (404), removing from cart`);
+                  return { item: null, shouldRemove: true };
+                }
+                console.error(`Error fetching product ${item.productId}:`, error);
+                return { item: null, shouldRemove: false };
+              }
+            })
+          );
+
+          // Հեռացնում ենք ապրանքները, որոնք չեն գտնվել
+          const itemsToRemove = itemsWithDetails
+            .map((result, index) => result.shouldRemove ? index : -1)
+            .filter(index => index !== -1);
+          
+          if (itemsToRemove.length > 0) {
+            const updatedCart = guestCart.filter((_, index) => !itemsToRemove.includes(index));
+            localStorage.setItem(CART_KEY, JSON.stringify(updatedCart));
+          }
+
+          const validItems = itemsWithDetails
+            .map(result => result.item)
+            .filter((item): item is CartItem => item !== null);
+          
+          if (validItems.length === 0) {
+            setCart(null);
+            setLoading(false);
+            return;
+          }
+
+          const subtotal = validItems.reduce((sum, item) => sum + item.total, 0);
+          const itemsCount = validItems.reduce((sum, item) => sum + item.quantity, 0);
+
+          setCart({
+            id: 'guest-cart',
+            items: validItems,
+            totals: {
+              subtotal,
+              discount: 0,
+              shipping: 0,
+              tax: 0,
+              total: subtotal,
+              currency: 'AMD',
+            },
+            itemsCount,
+          });
+        } catch (error) {
+          console.error('Error loading guest cart:', error);
+          setCart(null);
+        } finally {
+          setLoading(false);
+        }
         return;
       }
 
+      // Եթե օգտատերը գրանցված է, օգտագործում ենք API
       const response = await apiClient.get<{ cart: Cart }>('/api/v1/cart');
       setCart(response.cart);
     } catch (error) {
@@ -103,7 +234,29 @@ export default function CartPage() {
 
   async function handleRemoveItem(itemId: string) {
     try {
-      if (!isLoggedIn) return;
+      // Եթե օգտատերը գրանցված չէ, օգտագործում ենք localStorage
+      if (!isLoggedIn) {
+        if (typeof window === 'undefined') return;
+
+        const stored = localStorage.getItem(CART_KEY);
+        const guestCart: Array<{ productId: string; productSlug?: string; variantId: string; quantity: number }> = stored ? JSON.parse(stored) : [];
+        
+        // itemId-ն ունի format: `${productId}-${variantId}-${index}`
+        const parts = itemId.split('-');
+        if (parts.length >= 2) {
+          const productId = parts[0];
+          const variantId = parts.slice(1, -1).join('-'); // variantId-ն կարող է պարունակել '-'
+          
+          const updatedCart = guestCart.filter(
+            item => !(item.productId === productId && item.variantId === variantId)
+          );
+          
+          localStorage.setItem(CART_KEY, JSON.stringify(updatedCart));
+          window.dispatchEvent(new Event('cart-updated'));
+          fetchCart();
+        }
+        return;
+      }
 
       await apiClient.delete(`/api/v1/cart/items/${itemId}`);
       fetchCart();
@@ -120,7 +273,40 @@ export default function CartPage() {
     }
 
     try {
-      if (!isLoggedIn) return;
+      // Եթե օգտատերը գրանցված չէ, օգտագործում ենք localStorage
+      if (!isLoggedIn) {
+        if (typeof window === 'undefined') return;
+
+        setUpdatingItems(prev => new Set(prev).add(itemId));
+
+        const stored = localStorage.getItem(CART_KEY);
+        const guestCart: Array<{ productId: string; productSlug?: string; variantId: string; quantity: number }> = stored ? JSON.parse(stored) : [];
+        
+        // itemId-ն ունի format: `${productId}-${variantId}-${index}`
+        const parts = itemId.split('-');
+        if (parts.length >= 2) {
+          const productId = parts[0];
+          const variantId = parts.slice(1, -1).join('-'); // variantId-ն կարող է պարունակել '-'
+          
+          const item = guestCart.find(
+            item => item.productId === productId && item.variantId === variantId
+          );
+          
+          if (item) {
+            item.quantity = quantity;
+            localStorage.setItem(CART_KEY, JSON.stringify(guestCart));
+            window.dispatchEvent(new Event('cart-updated'));
+            fetchCart();
+          }
+        }
+        
+        setUpdatingItems(prev => {
+          const next = new Set(prev);
+          next.delete(itemId);
+          return next;
+        });
+        return;
+      }
 
       setUpdatingItems(prev => new Set(prev).add(itemId));
 
@@ -214,7 +400,7 @@ export default function CartPage() {
           {cart.items.map((item) => (
             <div
               key={item.id}
-              className="grid grid-cols-1 md:grid-cols-12 gap-4 px-6 py-6 hover:bg-gray-50 transition-colors"
+              className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6 px-6 py-6 hover:bg-gray-50 transition-colors"
             >
               {/* Product */}
               <div className="md:col-span-6 flex items-center gap-4">
@@ -290,7 +476,7 @@ export default function CartPage() {
               </div>
 
               {/* Subtotal */}
-              <div className="md:col-span-3 flex items-center justify-center md:justify-start">
+              <div className="md:col-span-3 flex items-center justify-center md:justify-start md:ml-4">
                 <span className="text-base font-semibold text-blue-600">
                   {formatPrice(item.total, currency)}
                 </span>
@@ -345,11 +531,8 @@ export default function CartPage() {
             className="w-full" 
             size="lg"
             onClick={() => {
-              if (!isLoggedIn) {
-                window.location.href = '/login?redirect=/checkout';
-              } else {
-                window.location.href = '/checkout';
-              }
+              // Allow guest checkout - no redirect to login
+              window.location.href = '/checkout';
             }}
           >
             {getTranslation('cart.proceedToCheckout', language)}

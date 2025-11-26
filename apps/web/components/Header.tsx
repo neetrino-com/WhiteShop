@@ -3,12 +3,22 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, Suspense } from 'react';
-import { getStoredCurrency, setStoredCurrency, type CurrencyCode, CURRENCIES } from '../lib/currency';
+import { getStoredCurrency, setStoredCurrency, type CurrencyCode, CURRENCIES, formatPrice } from '../lib/currency';
 import { getStoredLanguage, setStoredLanguage } from '../lib/language';
 import { useAuth } from '../lib/auth/AuthContext';
 import { apiClient } from '../lib/api-client';
 import { GoogleTranslate } from './GoogleTranslate';
 import contactData from '../../../config/contact.json';
+import { Instagram, Facebook, Linkedin } from 'lucide-react';
+
+type SocialLinks = {
+  instagram?: string;
+  facebook?: string;
+  linkedin?: string;
+};
+
+const socialLinks: SocialLinks =
+  (contactData as typeof contactData & { social?: SocialLinks }).social || {};
 
 interface Category {
   id: string;
@@ -96,6 +106,7 @@ const BadgeIcon = ({ icon, badge = 0, className = '', iconClassName = '' }: Badg
 
 const WISHLIST_KEY = 'shop_wishlist';
 const COMPARE_KEY = 'shop_compare';
+const CART_KEY = 'shop_cart_guest';
 
 function getWishlistCount(): number {
   if (typeof window === 'undefined') return 0;
@@ -186,10 +197,99 @@ export function Header() {
 
   // Fetch cart data with debouncing
   const fetchCart = async () => {
-    // Check if user is logged in and has a token
+    // Եթե օգտատերը գրանցված չէ, օգտագործում ենք localStorage
     if (!isLoggedIn) {
-      setCartCount(0);
-      setCartTotal(0);
+      if (typeof window === 'undefined') {
+        setCartCount(0);
+        setCartTotal(0);
+        return;
+      }
+
+      try {
+        const stored = localStorage.getItem(CART_KEY);
+        const guestCart: Array<{ productId: string; productSlug?: string; variantId: string; quantity: number }> = stored ? JSON.parse(stored) : [];
+        
+        if (guestCart.length === 0) {
+          setCartCount(0);
+          setCartTotal(0);
+          return;
+        }
+
+        const itemsCount = guestCart.reduce((sum, item) => sum + item.quantity, 0);
+        setCartCount(itemsCount);
+
+        // Հաշվարկում ենք total-ը ապրանքների գների հիման վրա
+        // և հեռացնում ենք գոյություն չունեցող ապրանքները
+        let total = 0;
+        const validCartItems: typeof guestCart = [];
+        
+        try {
+          const itemsWithPrices = await Promise.all(
+            guestCart.map(async (item) => {
+              try {
+                if (!item.productSlug) {
+                  return { price: 0, isValid: false };
+                }
+
+                const productData = await apiClient.get<{
+                  variants?: Array<{
+                    _id: string;
+                    id: string;
+                    price: number;
+                  }>;
+                }>(`/api/v1/products/${item.productSlug}`);
+
+                const variant = productData.variants?.find(v => 
+                  (v._id?.toString() || v.id) === item.variantId
+                ) || productData.variants?.[0];
+
+                if (!variant) {
+                  return { price: 0, isValid: false };
+                }
+
+                // Ապրանքը գոյություն ունի, ավելացնում ենք validCartItems-ին
+                validCartItems.push(item);
+                return { price: variant.price * item.quantity, isValid: true };
+              } catch (error: any) {
+                // 404 սխալը նորմալ իրավիճակ է (ապրանքը հեռացված է կամ չհրապարակված)
+                if (error?.status === 404 || error?.statusCode === 404) {
+                  console.warn(`⚠️ [CART] Ապրանքը գոյություն չունի կամ հեռացված է: ${item.productSlug}`);
+                } else {
+                  // Այլ սխալների համար լոգավորում ենք
+                  console.error(`❌ [CART] Սխալ ապրանքը բեռնելիս ${item.productId}:`, error);
+                }
+                return { price: 0, isValid: false };
+              }
+            })
+          );
+
+          total = itemsWithPrices.reduce((sum, item) => sum + item.price, 0);
+          
+          // Եթե հեռացվել են ապրանքներ, թարմացնում ենք localStorage-ը
+          if (validCartItems.length !== guestCart.length) {
+            const removedCount = guestCart.length - validCartItems.length;
+            console.log(`🧹 [CART] Հեռացվել է ${removedCount} գոյություն չունեցող ապրանք զամբյուղից`);
+            
+            if (validCartItems.length > 0) {
+              localStorage.setItem(CART_KEY, JSON.stringify(validCartItems));
+            } else {
+              localStorage.removeItem(CART_KEY);
+            }
+            
+            // Թարմացնում ենք itemsCount-ը
+            const newItemsCount = validCartItems.reduce((sum, item) => sum + item.quantity, 0);
+            setCartCount(newItemsCount);
+          }
+        } catch (error) {
+          console.error('❌ [CART] Սխալ զամբյուղի ընդհանուր գումարը հաշվարկելիս:', error);
+        }
+
+        setCartTotal(total);
+      } catch (error) {
+        console.error('Error loading guest cart:', error);
+        setCartCount(0);
+        setCartTotal(0);
+      }
       return;
     }
 
@@ -428,12 +528,43 @@ export function Header() {
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-10 text-sm">
-            {/* Phone Number */}
-            <div className="flex items-center gap-2 text-gray-700">
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M2 3C2 2.44772 2.44772 2 3 2H5.15287C5.64171 2 6.0589 2.35341 6.13927 2.8356L6.87858 7.27147C6.95075 7.70451 6.73206 8.13397 6.3394 8.3303L4.79126 9.10437C5.90715 11.8783 8.12168 14.0929 10.8956 15.2088L11.6697 13.6606C11.866 13.2679 12.2955 13.0493 12.7285 13.1214L17.1644 13.8607C17.6466 13.9411 18 14.3583 18 14.8471V17C18 17.5523 17.5523 18 17 18H15C7.8203 18 2 12.1797 2 5V3Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              <span>{contactData.phone}</span>
+            {/* Phone + Social */}
+            <div className="flex items-center gap-4 text-gray-700">
+              <div className="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 3C2 2.44772 2.44772 2 3 2H5.15287C5.64171 2 6.0589 2.35341 6.13927 2.8356L6.87858 7.27147C6.95075 7.70451 6.73206 8.13397 6.3394 8.3303L4.79126 9.10437C5.90715 11.8783 8.12168 14.0929 10.8956 15.2088L11.6697 13.6606C11.866 13.2679 12.2955 13.0493 12.7285 13.1214L17.1644 13.8607C17.6466 13.9411 18 14.3583 18 14.8471V17C18 17.5523 17.5523 18 17 18H15C7.8203 18 2 12.1797 2 5V3Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span>{contactData.phone}</span>
+              </div>
+              <div className="flex items-center gap-3 text-gray-600 pl-3 border-l border-gray-200">
+                <a
+                  href={socialLinks.instagram || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-pink-600 transition-colors"
+                  aria-label="Instagram"
+                >
+                  <Instagram className="w-4 h-4" />
+                </a>
+                <a
+                  href={socialLinks.facebook || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-blue-600 transition-colors"
+                  aria-label="Facebook"
+                >
+                  <Facebook className="w-4 h-4" />
+                </a>
+                <a
+                  href={socialLinks.linkedin || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-blue-700 transition-colors"
+                  aria-label="LinkedIn"
+                >
+                  <Linkedin className="w-4 h-4" />
+                </a>
+              </div>
             </div>
 
             {/* Currency and Google Translate */}
@@ -643,7 +774,7 @@ export function Header() {
                   <BadgeIcon icon={<CartIcon />} badge={cartCount} />
                 </div>
                 <span className="text-gray-800 font-bold text-sm hidden sm:block min-w-[3.5rem] group-hover:text-gray-900 transition-colors">
-                  {CURRENCIES[selectedCurrency]?.symbol || '$'}{cartTotal.toFixed(2)}
+                  {formatPrice(cartTotal, selectedCurrency)}
                 </span>
               </Link>
             </div>

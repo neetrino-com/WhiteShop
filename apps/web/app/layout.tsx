@@ -5,6 +5,7 @@ import './globals.css';
 import { ClientProviders } from '../components/ClientProviders';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
+import { Breadcrumb } from '../components/Breadcrumb';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -25,6 +26,7 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <ClientProviders>
             <Header />
+            <Breadcrumb />
             <main className="min-h-screen">
               {children}
             </main>

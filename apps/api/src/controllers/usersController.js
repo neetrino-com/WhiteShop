@@ -1,7 +1,106 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
+const Order = require('../models/Order');
 const bcrypt = require('bcryptjs');
 
 const usersController = {
+  /**
+   * Get user dashboard statistics
+   * GET /api/v1/users/dashboard
+   */
+  async getDashboard(req, res, next) {
+    try {
+      const userId = req.user.id;
+
+      // Get user orders statistics
+      const [
+        totalOrders,
+        pendingOrders,
+        completedOrders,
+        totalSpent,
+        recentOrders,
+        ordersByStatus,
+      ] = await Promise.all([
+        // Total orders count
+        Order.countDocuments({ userId }),
+        // Pending orders count
+        Order.countDocuments({ userId, status: 'pending' }),
+        // Completed orders count
+        Order.countDocuments({ userId, status: { $in: ['completed', 'delivered'] } }),
+        // Total spent (sum of paid orders)
+        Order.aggregate([
+          {
+            $match: {
+              userId: new mongoose.Types.ObjectId(userId),
+              paymentStatus: 'paid',
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$total' },
+            },
+          },
+        ]),
+        // Recent orders (last 5)
+        Order.find({ userId })
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .select('number status paymentStatus fulfillmentStatus total currency items createdAt')
+          .lean(),
+        // Orders by status
+        Order.aggregate([
+          {
+            $match: { userId: new mongoose.Types.ObjectId(userId) },
+          },
+          {
+            $group: {
+              _id: '$status',
+              count: { $sum: 1 },
+            },
+          },
+        ]),
+      ]);
+
+      // Get user profile for addresses count
+      const user = await User.findById(userId).select('addresses').lean();
+      const addressesCount = user?.addresses?.length || 0;
+
+      // Format orders by status
+      const statusCounts = {};
+      ordersByStatus.forEach((item) => {
+        statusCounts[item._id] = item.count;
+      });
+
+      // Format recent orders
+      const formattedRecentOrders = recentOrders.map((order) => ({
+        id: order._id.toString(),
+        number: order.number,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        fulfillmentStatus: order.fulfillmentStatus,
+        total: Number(order.total),
+        currency: order.currency || 'AMD',
+        itemsCount: order.items?.length || 0,
+        createdAt: order.createdAt,
+      }));
+
+      res.json({
+        stats: {
+          totalOrders,
+          pendingOrders,
+          completedOrders,
+          totalSpent: totalSpent.length > 0 ? Number(totalSpent[0].total) : 0,
+          addressesCount,
+          ordersByStatus: statusCounts,
+        },
+        recentOrders: formattedRecentOrders,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   /**
    * Get user profile
    * GET /api/v1/users/profile

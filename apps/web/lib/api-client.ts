@@ -147,41 +147,70 @@ class ApiClient {
     const url = this.buildUrl(endpoint, options?.params);
     const maxRetries = 3;
     const retryDelay = 1000; // 1 second
+    const timeout = 30000; // 30 seconds timeout
     
     console.log('🌐 [API CLIENT] GET request:', { url, endpoint, baseUrl: this.baseUrl });
     
     let response: Response;
     try {
-      response = await fetch(url, {
-        method: 'GET',
-        headers: this.getHeaders(options),
-        cache: 'no-store', // Disable caching for server components
-        ...options,
-      });
-      console.log('🌐 [API CLIENT] GET response status:', response.status, response.statusText);
+      // Ստեղծում ենք timeout controller
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      try {
+        response = await fetch(url, {
+          method: 'GET',
+          headers: this.getHeaders(options),
+          cache: 'no-store', // Disable caching for server components
+          signal: controller.signal,
+          ...options,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error(`Request timeout: API server did not respond within ${timeout / 1000} seconds. URL: ${url}`);
+        }
+        throw fetchError;
+      }
+      
+      // Լոգավորում ենք response status-ը անվտանգ կերպով
+      try {
+        console.log('🌐 [API CLIENT] GET response status:', response.status, response.statusText || '');
+      } catch (logError) {
+        // Եթե console.log-ը ձախողվի, շարունակում ենք
+        console.warn('⚠️ [API CLIENT] Failed to log response status');
+      }
     } catch (networkError: any) {
+      // Ստուգում ենք timeout սխալը
+      if (networkError.message?.includes('timeout') || networkError.message?.includes('Request timeout')) {
+        console.error('⏱️ [API CLIENT] Request timeout:', networkError.message);
+        throw networkError;
+      }
+      
       console.error('❌ [API CLIENT] Network error during fetch:', networkError);
       
-      // Проверяем, является ли это ошибкой подключения
+      // Ստուգում ենք, արդյոք սա կապի մերժման սխալ է
       const isConnectionRefused = networkError.message?.includes('Failed to fetch') || 
                                   networkError.message?.includes('ERR_CONNECTION_REFUSED') ||
-                                  networkError.message?.includes('NetworkError');
+                                  networkError.message?.includes('NetworkError') ||
+                                  networkError.message?.includes('Network request failed');
       
       if (isConnectionRefused) {
-        const errorMessage = `⚠️ API сервер недоступен!\n\n` +
-          `Не удалось подключиться к ${this.baseUrl}\n\n` +
-          `Решение:\n` +
-          `1. Убедитесь, что API сервер запущен\n` +
-          `2. Запустите сервер командой: npm run dev:api (из корня проекта)\n` +
-          `   или: cd apps/api && npm run dev\n` +
-          `3. Проверьте, что порт ${this.baseUrl.split(':').pop() || '3001'} не занят другим процессом\n\n` +
-          `URL запроса: ${url}`;
+        const errorMessage = `⚠️ API սերվերը հասանելի չէ!\n\n` +
+          `Չհաջողվեց միանալ ${this.baseUrl}\n\n` +
+          `Լուծում:\n` +
+          `1. Համոզվեք, որ API սերվերը գործարկված է\n` +
+          `2. Գործարկեք սերվերը հրամանով: npm run dev:api (նախագծի արմատից)\n` +
+          `   կամ: cd apps/api && npm run dev\n` +
+          `3. Ստուգեք, որ ${this.baseUrl.split(':').pop() || '3001'} պորտը զբաղված չէ այլ գործընթացով\n\n` +
+          `Հարցման URL: ${url}`;
         
         console.error('❌ [API CLIENT]', errorMessage);
         throw new Error(errorMessage);
       }
       
-      throw new Error(`Network error: Unable to connect to API at ${url}. ${networkError.message || 'Please check if the API server is running.'}`);
+      throw new Error(`Ցանցային սխալ: Չհաջողվեց միանալ API-ին ${url}. ${networkError.message || 'Խնդրում ենք ստուգել, արդյոք API սերվերը գործարկված է:'}`);
     }
 
     if (!response.ok) {
@@ -197,12 +226,15 @@ class ApiClient {
       let errorData: any = null;
       const isUnauthorized = response.status === 401;
       
-      console.error(`❌ [API CLIENT] GET Error: ${response.status} ${response.statusText}`, {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-      });
+      // Log error only if it's not a 401 (authentication errors are expected)
+      if (this.shouldLogError(response.status)) {
+        console.error(`❌ [API CLIENT] GET Error: ${response.status} ${response.statusText}`, {
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries()),
+        });
+      }
       
       // Handle 401 Unauthorized - clear token and redirect
       if (isUnauthorized) {

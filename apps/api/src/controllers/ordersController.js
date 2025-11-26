@@ -23,6 +23,7 @@ const ordersController = {
     try {
       const {
         cartId,
+        items, // For guest checkout - items array
         email,
         phone,
         shippingAddress,
@@ -33,31 +34,79 @@ const ordersController = {
         idempotencyKey,
       } = req.body;
 
-      // Validate cartId
-      if (!cartId) {
-        return res.status(400).json({
-          type: 'https://api.shop.am/problems/validation-error',
-          title: 'Validation failed',
-          status: 400,
-          detail: 'cartId is required',
-          instance: req.path,
-        });
-      }
+      let cart;
 
-      // Get cart
-      const cart = await Cart.findOne({
-        _id: cartId,
-        ...(req.user?.id ? { userId: req.user.id } : {}),
-      }).populate('items.productId').lean();
+      // Handle guest checkout - create cart from items
+      if (cartId === 'guest-cart' && items && Array.isArray(items) && items.length > 0) {
+        // Create temporary cart for guest checkout
+        const cartItems = [];
+        for (const item of items) {
+          if (!item.productId || !item.variantId || !item.quantity) {
+            continue;
+          }
 
-      if (!cart || !cart.items || cart.items.length === 0) {
-        return res.status(400).json({
-          type: 'https://api.shop.am/problems/validation-error',
-          title: 'Cart is empty',
-          status: 400,
-          detail: 'Cart must contain at least one item',
-          instance: req.path,
-        });
+          // Get product and variant to get price
+          const product = await Product.findById(item.productId);
+          if (!product) continue;
+
+          const variant = product.variants?.find(
+            (v) => v._id.toString() === item.variantId.toString()
+          );
+
+          if (!variant || !variant.published) {
+            continue;
+          }
+
+          cartItems.push({
+            variantId: item.variantId,
+            productId: item.productId,
+            quantity: item.quantity,
+            priceSnapshot: variant.price,
+          });
+        }
+
+        if (cartItems.length === 0) {
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/validation-error',
+            title: 'Cart is empty',
+            status: 400,
+            detail: 'Cart must contain at least one valid item',
+            instance: req.path,
+          });
+        }
+
+        // Create temporary cart object
+        cart = {
+          items: cartItems,
+          locale: 'en',
+        };
+      } else {
+        // Validate cartId for regular checkout
+        if (!cartId) {
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/validation-error',
+            title: 'Validation failed',
+            status: 400,
+            detail: 'cartId is required',
+            instance: req.path,
+          });
+        }
+
+        // Get cart from database
+        cart = await Cart.findOne({
+          _id: cartId,
+          ...(req.user?.id ? { userId: req.user.id } : {}),
+        }).populate('items.productId').lean();
+
+        if (!cart || !cart.items || cart.items.length === 0) {
+          return res.status(400).json({
+            type: 'https://api.shop.am/problems/validation-error',
+            title: 'Cart is empty',
+            status: 400,
+            detail: 'Cart must contain at least one item',
+            instance: req.path,
+          });
+        }
       }
 
       // Get product details and validate variants

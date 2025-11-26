@@ -125,6 +125,21 @@ export default async function ProductsPage({
   const selectedColors = colors ? colors.split(',').map(c => c.trim()) : [];
   const selectedSizes = sizes ? sizes.split(',').map(s => s.trim()) : [];
 
+  // Helper function to build pagination URL
+  const buildPaginationUrl = (pageNum: number) => {
+    const params = new URLSearchParams();
+    params.set('page', pageNum.toString());
+    if (search) params.set('search', search);
+    if (category) params.set('category', category);
+    if (minPrice) params.set('minPrice', minPrice);
+    if (maxPrice) params.set('maxPrice', maxPrice);
+    if (colors) params.set('colors', colors);
+    if (sizes) params.set('sizes', sizes);
+    if (brand) params.set('brand', brand);
+    if (sort) params.set('sort', sort);
+    return `/products?${params.toString()}`;
+  };
+
   return (
     <div className="w-full">
       {/* Category Navigation */}
@@ -133,9 +148,9 @@ export default async function ProductsPage({
       {/* Header with Breadcrumb, View Mode, and Sort */}
       <ProductsHeader />
 
-      <div className="flex">
-        {/* Left Sidebar - Filters (Full height, no padding) */}
-        <aside className="w-64 flex-shrink-0 hidden lg:block bg-gray-50 min-h-screen">
+      <div className="flex gap-8 pl-4 sm:pl-8 lg:pl-8">
+        {/* Left Sidebar - Filters (aligned with logo direction) */}
+        <aside className="w-64 flex-shrink-0 hidden lg:block bg-gray-50 min-h-screen ml-36 lg:ml-42">
           <div className="sticky top-4 p-4 space-y-6">
             <PriceFilter currentMinPrice={minPrice} currentMaxPrice={maxPrice} category={category} search={search} />
             <ColorFilter 
@@ -163,68 +178,68 @@ export default async function ProductsPage({
         </aside>
 
         {/* Main Content - Products */}
-        <div className="flex-1 min-w-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          {/* Mobile Filter - Show on small screens */}
-          <div className="lg:hidden mb-6 space-y-4">
-            <PriceFilter currentMinPrice={minPrice} currentMaxPrice={maxPrice} category={category} search={search} />
-            <ColorFilter 
-              category={category} 
-              search={search} 
-              minPrice={minPrice} 
-              maxPrice={maxPrice}
-              selectedColors={selectedColors}
-            />
-            <SizeFilter 
-              category={category} 
-              search={search} 
-              minPrice={minPrice} 
-              maxPrice={maxPrice}
-              selectedSizes={selectedSizes}
-            />
-            <BrandFilter 
-              category={category} 
-              search={search} 
-              minPrice={minPrice} 
-              maxPrice={maxPrice}
-              selectedBrand={brand}
-            />
-          </div>
-      
-          {productsData.data.length > 0 ? (
-            <>
-              <ProductsGrid products={productsData.data} sortBy={sort || 'default'} />
-
-              {/* Pagination */}
-              {productsData.meta.totalPages > 1 && (
-                <div className="mt-8 flex justify-center gap-2">
-                  {page > 1 && (
-                    <Link href={`/products?page=${page - 1}${search ? `&search=${encodeURIComponent(search)}` : ''}${category ? `&category=${encodeURIComponent(category)}` : ''}${minPrice ? `&minPrice=${encodeURIComponent(minPrice)}` : ''}${maxPrice ? `&maxPrice=${encodeURIComponent(maxPrice)}` : ''}${colors ? `&colors=${encodeURIComponent(colors)}` : ''}${sizes ? `&sizes=${encodeURIComponent(sizes)}` : ''}${brand ? `&brand=${encodeURIComponent(brand)}` : ''}${sort ? `&sort=${encodeURIComponent(sort)}` : ''}`}>
-                      <Button variant="outline">Previous</Button>
-                    </Link>
-                  )}
-                  <span className="flex items-center px-4">
-                    Page {page} of {productsData.meta.totalPages}
-                  </span>
-                  {page < productsData.meta.totalPages && (
-                    <Link href={`/products?page=${page + 1}${search ? `&search=${encodeURIComponent(search)}` : ''}${category ? `&category=${encodeURIComponent(category)}` : ''}${minPrice ? `&minPrice=${encodeURIComponent(minPrice)}` : ''}${maxPrice ? `&maxPrice=${encodeURIComponent(maxPrice)}` : ''}${colors ? `&colors=${encodeURIComponent(colors)}` : ''}${sizes ? `&sizes=${encodeURIComponent(sizes)}` : ''}${brand ? `&brand=${encodeURIComponent(brand)}` : ''}${sort ? `&sort=${encodeURIComponent(sort)}` : ''}`}>
-                      <Button variant="outline">Next</Button>
-                    </Link>
-                  )}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-gray-500 text-lg">
-                {search ? `No products found for "${search}"` : 'No products found.'}
-              </p>
-              <p className="text-gray-400 mt-2">
-                {search 
-                  ? 'Try searching with different keywords.'
-                  : 'Please make sure the API server is running and the database is seeded.'}
-              </p>
+        <div className="flex-1 min-w-0 py-4 pr-4 sm:pr-6 lg:pr-8">
+            {/* Mobile Filter - Show on small screens */}
+            <div className="lg:hidden mb-6 space-y-4">
+              <PriceFilter currentMinPrice={minPrice} currentMaxPrice={maxPrice} category={category} search={search} />
+              <ColorFilter 
+                category={category} 
+                search={search} 
+                minPrice={minPrice} 
+                maxPrice={maxPrice}
+                selectedColors={selectedColors}
+              />
+              <SizeFilter 
+                category={category} 
+                search={search} 
+                minPrice={minPrice} 
+                maxPrice={maxPrice}
+                selectedSizes={selectedSizes}
+              />
+              <BrandFilter 
+                category={category} 
+                search={search} 
+                minPrice={minPrice} 
+                maxPrice={maxPrice}
+                selectedBrand={brand}
+              />
             </div>
-          )}
+      
+            {productsData.data.length > 0 ? (
+              <>
+                <ProductsGrid products={productsData.data} sortBy={sort || 'default'} />
+
+                {/* Pagination */}
+                {productsData.meta.totalPages > 1 && (
+                  <div className="mt-8 flex justify-center gap-2">
+                    {page > 1 && (
+                      <Link href={buildPaginationUrl(page - 1)}>
+                        <Button variant="outline">Previous</Button>
+                      </Link>
+                    )}
+                    <span className="flex items-center px-4">
+                      Page {page} of {productsData.meta.totalPages}
+                    </span>
+                    {page < productsData.meta.totalPages && (
+                      <Link href={buildPaginationUrl(page + 1)}>
+                        <Button variant="outline">Next</Button>
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-gray-500 text-lg">
+                  {search ? `No products found for "${search}"` : 'No products found.'}
+                </p>
+                <p className="text-gray-400 mt-2">
+                  {search 
+                    ? 'Try searching with different keywords.'
+                    : 'Please make sure the API server is running and the database is seeded.'}
+                </p>
+              </div>
+            )}
         </div>
       </div>
     </div>

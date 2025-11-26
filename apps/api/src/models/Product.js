@@ -36,7 +36,8 @@ const variantSchema = new mongoose.Schema({
   sku: {
     type: String,
     required: true,
-    unique: true,
+    // Note: unique index is created at productSchema level, not here
+    // This allows multiple null values across different products
   },
   barcode: String,
   price: {
@@ -66,6 +67,29 @@ const variantSchema = new mongoose.Schema({
   options: [variantOptionSchema],
 }, {
   timestamps: true,
+});
+
+const productLabelSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['text', 'percentage'],
+    required: true,
+  },
+  value: {
+    type: String,
+    required: true,
+  },
+  position: {
+    type: String,
+    enum: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+    default: 'top-left',
+  },
+  color: {
+    type: String,
+    default: null, // null = default color based on type
+  },
+}, {
+  _id: true,
 });
 
 const productSchema = new mongoose.Schema({
@@ -101,13 +125,41 @@ const productSchema = new mongoose.Schema({
     ref: 'Attribute',
   }],
   variants: [variantSchema],
+  labels: [productLabelSchema],
+  discountPercent: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100,
+  },
   deletedAt: Date,
 }, {
   timestamps: true,
 });
 
 // Indexes
-// variants.sku уже имеет unique: true в схеме, что автоматически создает индекс
+// Unique ինդեքս variant-ի SKU-ի համար
+// Կարևոր նշում.
+// - MongoDB-ում `sparse: true` չի լուծում null արժեքների կրկնության խնդիրը,
+//   քանի որ դաշտը գոյություն ունենալու դեպքում null-ը նույնպես ինդեքսավորվում է:
+// - Որպեսզի թույլ տանք null/դատարկ արժեքներ, բայց պահենք uniqueness միայն
+//   իրական (ոչ դատարկ) SKU-ների համար, օգտագործում ենք partialFilterExpression:
+// 
+// ✴ Համոզվեք, որ հին ինդեքսը ջնջված է, որ սա աշխատի ճիշտ.
+//   db.products.dropIndex("variants.sku_1")
+productSchema.index(
+  { 'variants.sku': 1 },
+  {
+    unique: true,
+    // Ինդեքսավորում ենք միայն այն variant-ները, որտեղ SKU-ն string տիպի է
+    // MongoDB partial indexes-ը չի աջակցում $ne, ուստի օգտագործում ենք միայն $type
+    // Սա թույլ կտա null/undefined արժեքներ, բայց պահպանում է uniqueness string SKU-ների համար
+    partialFilterExpression: {
+      'variants.sku': { $type: 'string' }
+    },
+    name: 'variants.sku_1',
+  }
+);
 productSchema.index({ brandId: 1 });
 productSchema.index({ published: 1, publishedAt: 1 });
 productSchema.index({ featured: 1 });
