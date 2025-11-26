@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../lib/auth/AuthContext';
 import { Card, Button, Input } from '@shop/ui';
 import { apiClient } from '../../../lib/api-client';
@@ -33,13 +33,25 @@ interface OrdersResponse {
 export default function OrdersPage() {
   const { isLoggedIn, isAdmin, isLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState<OrdersResponse['meta'] | null>(null);
   const [updatingStatuses, setUpdatingStatuses] = useState<Set<string>>(new Set());
   const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Initialize filters from URL params on mount
+  useEffect(() => {
+    if (searchParams) {
+      const status = searchParams.get('status') || '';
+      const paymentStatus = searchParams.get('paymentStatus') || '';
+      setStatusFilter(status);
+      setPaymentStatusFilter(paymentStatus);
+    }
+  }, []); // Only run on mount
 
   useEffect(() => {
     if (!isLoading) {
@@ -53,13 +65,14 @@ export default function OrdersPage() {
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
-      console.log('📦 [ADMIN] Fetching orders...', { page, statusFilter });
+      console.log('📦 [ADMIN] Fetching orders...', { page, statusFilter, paymentStatusFilter });
       
       const response = await apiClient.get<OrdersResponse>('/api/v1/admin/orders', {
         params: {
           page: page.toString(),
           limit: '20',
           status: statusFilter || '',
+          paymentStatus: paymentStatusFilter || '',
         },
       });
 
@@ -71,14 +84,14 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter]);
+  }, [page, statusFilter, paymentStatusFilter]);
 
   useEffect(() => {
     if (isLoggedIn && isAdmin) {
       fetchOrders();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoggedIn, isAdmin, page, statusFilter]);
+  }, [isLoggedIn, isAdmin, page, statusFilter, paymentStatusFilter]);
 
   const formatCurrency = (amount: number, currency: string = 'AMD') => {
     return new Intl.NumberFormat('hy-AM', {
@@ -178,13 +191,23 @@ export default function OrdersPage() {
 
         {/* Filters */}
         <Card className="p-4 mb-6">
-          <div className="flex gap-4 items-center">
+          <div className="flex gap-4 items-center flex-wrap">
             <select
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={statusFilter}
               onChange={(e) => {
-                setStatusFilter(e.target.value);
+                const newStatus = e.target.value;
+                setStatusFilter(newStatus);
                 setPage(1);
+                // Update URL without causing navigation
+                const params = new URLSearchParams(searchParams?.toString() || '');
+                if (newStatus) {
+                  params.set('status', newStatus);
+                } else {
+                  params.delete('status');
+                }
+                const newUrl = params.toString() ? `/admin/orders?${params.toString()}` : '/admin/orders';
+                router.push(newUrl, { scroll: false });
               }}
             >
               <option value="">All Statuses</option>
@@ -192,6 +215,29 @@ export default function OrdersPage() {
               <option value="processing">Processing</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
+            </select>
+            <select
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={paymentStatusFilter}
+              onChange={(e) => {
+                const newPaymentStatus = e.target.value;
+                setPaymentStatusFilter(newPaymentStatus);
+                setPage(1);
+                // Update URL without causing navigation
+                const params = new URLSearchParams(searchParams?.toString() || '');
+                if (newPaymentStatus) {
+                  params.set('paymentStatus', newPaymentStatus);
+                } else {
+                  params.delete('paymentStatus');
+                }
+                const newUrl = params.toString() ? `/admin/orders?${params.toString()}` : '/admin/orders';
+                router.push(newUrl, { scroll: false });
+              }}
+            >
+              <option value="">All Payment Statuses</option>
+              <option value="paid">Paid</option>
+              <option value="pending">Pending Payment</option>
+              <option value="failed">Failed</option>
             </select>
             {updateMessage && (
               <div

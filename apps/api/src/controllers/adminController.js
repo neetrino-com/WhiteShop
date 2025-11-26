@@ -239,16 +239,19 @@ const adminController = {
 
   /**
    * Get all orders (admin only)
-   * GET /api/v1/admin/orders?page=&limit=&status=
+   * GET /api/v1/admin/orders?page=&limit=&status=&paymentStatus=
    */
   async getOrders(req, res, next) {
     try {
-      const { page = 1, limit = 20, status = '' } = req.query;
+      const { page = 1, limit = 20, status = '', paymentStatus = '' } = req.query;
       const skip = (parseInt(page) - 1) * parseInt(limit);
 
       const query = {};
       if (status) {
         query.status = status;
+      }
+      if (paymentStatus) {
+        query.paymentStatus = paymentStatus;
       }
 
       const [orders, total] = await Promise.all([
@@ -402,22 +405,74 @@ const adminController = {
 
   /**
    * Get all products (admin only, including unpublished)
-   * GET /api/v1/admin/products?page=&limit=&search=
+   * GET /api/v1/admin/products?page=&limit=&search=&category=&sku=
    */
   async getProducts(req, res, next) {
     try {
-      const { page = 1, limit = 20, search = '', minPrice, maxPrice } = req.query;
+      const { page = 1, limit = 20, search = '', category = '', sku = '', minPrice, maxPrice, sort = 'createdAt-desc' } = req.query;
       const skip = (parseInt(page) - 1) * parseInt(limit);
 
       const query = { deletedAt: null };
 
+      // General search (title, slug)
       if (search && search.trim()) {
         const searchRegex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
         query.$or = [
           { 'translations.title': searchRegex },
           { 'translations.slug': searchRegex },
-          { 'variants.sku': searchRegex },
         ];
+      }
+
+      // Category filter
+      if (category && category.trim()) {
+        try {
+          const categoryDoc = await Category.findOne({
+            $or: [
+              { _id: category.trim() },
+              { 'translations.slug': category.trim() },
+            ],
+            deletedAt: null,
+          });
+
+          if (categoryDoc) {
+            if (query.$or) {
+              // If search already exists, combine with category filter
+              query.$and = [
+                { $or: query.$or },
+                {
+                  $or: [
+                    { primaryCategoryId: categoryDoc._id },
+                    { categoryIds: categoryDoc._id },
+                  ],
+                },
+              ];
+              delete query.$or;
+            } else {
+              query.$or = [
+                { primaryCategoryId: categoryDoc._id },
+                { categoryIds: categoryDoc._id },
+              ];
+            }
+          }
+        } catch (catErr) {
+          console.error('❌ [ADMIN] Error finding category:', catErr);
+        }
+      }
+
+      // SKU filter
+      if (sku && sku.trim()) {
+        const skuRegex = new RegExp(sku.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        if (query.$and) {
+          query.$and.push({ 'variants.sku': skuRegex });
+        } else if (query.$or) {
+          query.$and = [
+            { $or: query.$or },
+            { 'variants.sku': skuRegex },
+          ];
+          delete query.$or;
+        } else {
+          query['variants.sku'] = skuRegex;
+        }
       }
 
       // Price filtering - filter products by variant prices
@@ -438,57 +493,87 @@ const adminController = {
         };
       }
 
+      // Parse sort parameter (format: "field-order" e.g., "price-asc", "price-desc", "createdAt-desc")
+      let sortOption = { createdAt: -1 }; // default
+      if (sort) {
+        const [field, order] = sort.split('-');
+        const sortOrder = order === 'asc' ? 1 : -1;
+        
+        if (field === 'price') {
+          // For price sorting, we need to sort by the minimum variant price
+          // We'll handle this after fetching by sorting the mapped results
+          sortOption = { 'variants.price': sortOrder };
+        } else if (field === 'createdAt') {
+          sortOption = { createdAt: sortOrder };
+        } else if (field === 'title') {
+          sortOption = { 'translations.title': sortOrder };
+        }
+      }
+
       const [products, total] = await Promise.all([
         Product.find(query)
           .populate('brandId', 'slug')
-          .sort({ createdAt: -1 })
+          .sort(sortOption)
           .skip(skip)
           .limit(parseInt(limit))
           .lean(),
         Product.countDocuments(query),
       ]);
 
+      // Map products and get variant prices for sorting
+      let mappedProducts = products.map((product) => {
+        const translation = product.translations?.[0];
+        const variant = product.variants
+          ?.filter((v) => v.published)
+          .sort((a, b) => a.price - b.price)[0];
+
+        // Group variants by color and calculate stock per color
+        const colorStockMap = new Map();
+        if (product.variants && product.variants.length > 0) {
+          product.variants.forEach(v => {
+            if (v.published && v.stock > 0) {
+              const colorOption = v.options?.find(opt => opt.attributeKey === 'color');
+              const color = colorOption?.value || 'default';
+              const currentStock = colorStockMap.get(color) || 0;
+              colorStockMap.set(color, currentStock + v.stock);
+            }
+          });
+        }
+
+        // Convert color stock map to array
+        const colorStocks = Array.from(colorStockMap.entries()).map(([color, stock]) => ({
+          color,
+          stock,
+        }));
+
+        return {
+          id: product._id.toString(),
+          slug: translation?.slug || '',
+          title: translation?.title || '',
+          published: product.published || false,
+          price: variant?.price || 0,
+          stock: variant?.stock || 0,
+          colorStocks: colorStocks, // Add color stocks array
+          discountPercent: product.discountPercent || 0,
+          image: Array.isArray(product.media) && product.media[0]
+            ? (typeof product.media[0] === 'string' ? product.media[0] : product.media[0].url)
+            : null,
+          createdAt: product.createdAt,
+        };
+      });
+
+      // If sorting by price, sort the mapped results
+      if (sort && sort.startsWith('price-')) {
+        const sortOrder = sort.endsWith('-asc') ? 1 : -1;
+        mappedProducts.sort((a, b) => {
+          const priceA = a.price || 0;
+          const priceB = b.price || 0;
+          return (priceA - priceB) * sortOrder;
+        });
+      }
+
       res.json({
-        data: products.map((product) => {
-          const translation = product.translations?.[0];
-          const variant = product.variants
-            ?.filter((v) => v.published)
-            .sort((a, b) => a.price - b.price)[0];
-
-          // Group variants by color and calculate stock per color
-          const colorStockMap = new Map();
-          if (product.variants && product.variants.length > 0) {
-            product.variants.forEach(v => {
-              if (v.published && v.stock > 0) {
-                const colorOption = v.options?.find(opt => opt.attributeKey === 'color');
-                const color = colorOption?.value || 'default';
-                const currentStock = colorStockMap.get(color) || 0;
-                colorStockMap.set(color, currentStock + v.stock);
-              }
-            });
-          }
-
-          // Convert color stock map to array
-          const colorStocks = Array.from(colorStockMap.entries()).map(([color, stock]) => ({
-            color,
-            stock,
-          }));
-
-          return {
-            id: product._id.toString(),
-            slug: translation?.slug || '',
-            title: translation?.title || '',
-            published: product.published || false,
-            price: variant?.price || 0,
-            stock: variant?.stock || 0,
-            colorStocks: colorStocks, // Add color stocks array
-            discountPercent: product.discountPercent || 0,
-            image: Array.isArray(product.media) && product.media[0]
-              ? (typeof product.media[0] === 'string' ? product.media[0] : product.media[0].url)
-              : null,
-            createdAt: product.createdAt,
-          };
-        }),
+        data: mappedProducts,
         meta: {
           total,
           page: parseInt(page),
@@ -2376,6 +2461,202 @@ const adminController = {
       res.json(response);
     } catch (error) {
       console.error('❌ [ADMIN] Error updating price filter settings:', error);
+      next(error);
+    }
+  },
+
+  /**
+   * Get analytics data for different time periods
+   * GET /api/v1/admin/analytics?period=day|week|month|year|custom&startDate=&endDate=
+   */
+  async getAnalytics(req, res, next) {
+    try {
+      const { period = 'week', startDate, endDate } = req.query;
+      
+      console.log('📊 [ADMIN] Fetching analytics for period:', period);
+
+      // Calculate date range based on period
+      let start, end = new Date();
+      
+      switch (period) {
+        case 'day':
+          start = new Date();
+          start.setHours(0, 0, 0, 0);
+          break;
+        case 'week':
+          start = new Date();
+          start.setDate(start.getDate() - 7);
+          start.setHours(0, 0, 0, 0);
+          break;
+        case 'month':
+          start = new Date();
+          start.setMonth(start.getMonth() - 1);
+          start.setHours(0, 0, 0, 0);
+          break;
+        case 'year':
+          start = new Date();
+          start.setFullYear(start.getFullYear() - 1);
+          start.setHours(0, 0, 0, 0);
+          break;
+        case 'custom':
+          if (startDate && endDate) {
+            start = new Date(startDate);
+            end = new Date(endDate);
+          } else {
+            start = new Date();
+            start.setDate(start.getDate() - 7);
+            start.setHours(0, 0, 0, 0);
+          }
+          break;
+        default:
+          start = new Date();
+          start.setDate(start.getDate() - 7);
+          start.setHours(0, 0, 0, 0);
+      }
+
+      // Orders analytics
+      const ordersMatch = {
+        createdAt: { $gte: start, $lte: end },
+      };
+
+      const ordersStats = await Order.aggregate([
+        { $match: ordersMatch },
+        {
+          $group: {
+            _id: null,
+            totalOrders: { $sum: 1 },
+            totalRevenue: { $sum: { $cond: [{ $eq: ['$paymentStatus', 'paid'] }, '$total', 0] } },
+            paidOrders: { $sum: { $cond: [{ $eq: ['$paymentStatus', 'paid'] }, 1, 0] } },
+            pendingOrders: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+            completedOrders: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          },
+        },
+      ]);
+
+      const ordersData = ordersStats[0] || {
+        totalOrders: 0,
+        totalRevenue: 0,
+        paidOrders: 0,
+        pendingOrders: 0,
+        completedOrders: 0,
+      };
+
+      // Top selling products
+      const topProducts = await Order.aggregate([
+        { $match: { ...ordersMatch, paymentStatus: 'paid' } },
+        { $unwind: '$items' },
+        {
+          $group: {
+            _id: '$items.variantId',
+            productTitle: { $first: '$items.productTitle' },
+            sku: { $first: '$items.sku' },
+            totalQuantity: { $sum: '$items.quantity' },
+            totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+            orderCount: { $sum: 1 },
+          },
+        },
+        { $sort: { totalQuantity: -1 } },
+        { $limit: 10 },
+      ]);
+
+      // Get product images for top products
+      const variantIds = topProducts.map(p => p._id);
+      const products = await Product.find({
+        'variants._id': { $in: variantIds },
+        deletedAt: null,
+      })
+        .select('translations variants media')
+        .lean();
+
+      const topProductsWithImages = topProducts.map(item => {
+        const product = products.find(p => 
+          p.variants.some(v => v._id.toString() === item._id.toString())
+        );
+        const image = product?.media?.[0] 
+          ? (typeof product.media[0] === 'string' ? product.media[0] : product.media[0].url)
+          : null;
+        return {
+          variantId: item._id.toString(),
+          productId: product?._id?.toString() || '',
+          title: item.productTitle,
+          sku: item.sku,
+          totalQuantity: item.totalQuantity,
+          totalRevenue: item.totalRevenue,
+          orderCount: item.orderCount,
+          image,
+        };
+      });
+
+      // Top categories
+      const topCategories = await Order.aggregate([
+        { $match: { ...ordersMatch, paymentStatus: 'paid' } },
+        { $unwind: '$items' },
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'items.variantId',
+            foreignField: 'variants._id',
+            as: 'product',
+          },
+        },
+        { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+        { $unwind: { path: '$product.primaryCategoryId', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'categories',
+            localField: 'product.primaryCategoryId',
+            foreignField: '_id',
+            as: 'category',
+          },
+        },
+        { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: '$category._id',
+            categoryName: { $first: '$category.translations.0.title' },
+            totalQuantity: { $sum: '$items.quantity' },
+            totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+            orderCount: { $sum: 1 },
+          },
+        },
+        { $sort: { totalRevenue: -1 } },
+        { $limit: 10 },
+      ]);
+
+      // Orders by day (for chart)
+      const ordersByDay = await Order.aggregate([
+        { $match: ordersMatch },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+            },
+            count: { $sum: 1 },
+            revenue: { $sum: { $cond: [{ $eq: ['$paymentStatus', 'paid'] }, '$total', 0] } },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]);
+
+      res.json({
+        period,
+        dateRange: {
+          start: start.toISOString(),
+          end: end.toISOString(),
+        },
+        orders: ordersData,
+        topProducts: topProductsWithImages,
+        topCategories: topCategories.map(cat => ({
+          categoryId: cat._id?.toString() || '',
+          categoryName: cat.categoryName || 'Unknown',
+          totalQuantity: cat.totalQuantity,
+          totalRevenue: cat.totalRevenue,
+          orderCount: cat.orderCount,
+        })),
+        ordersByDay,
+      });
+    } catch (error) {
+      console.error('❌ [ADMIN] Error fetching analytics:', error);
       next(error);
     }
   },

@@ -31,16 +31,27 @@ interface ProductsResponse {
   };
 }
 
+interface Category {
+  id: string;
+  slug: string;
+  title: string;
+  parentId: string | null;
+}
+
 export default function ProductsPage() {
   const { isLoggedIn, isAdmin, isLoading } = useAuth();
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [categorySearch, setCategorySearch] = useState('');
+  const [skuSearch, setSkuSearch] = useState('');
+  const [categories, setCategories] = useState<Category[]>([]);
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState<ProductsResponse['meta'] | null>(null);
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('createdAt-desc');
 
   useEffect(() => {
     if (!isLoading) {
@@ -53,9 +64,25 @@ export default function ProductsPage() {
 
   useEffect(() => {
     if (isLoggedIn && isAdmin) {
+      fetchCategories();
+    }
+  }, [isLoggedIn, isAdmin]);
+
+  useEffect(() => {
+    if (isLoggedIn && isAdmin) {
       fetchProducts();
     }
-  }, [isLoggedIn, isAdmin, page, search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, isAdmin, page, search, categorySearch, skuSearch, sortBy, minPrice, maxPrice]);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await apiClient.get<{ data: Category[] }>('/api/v1/admin/categories');
+      setCategories(response.data || []);
+    } catch (err) {
+      console.error('❌ [ADMIN] Error fetching categories:', err);
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -69,12 +96,24 @@ export default function ProductsPage() {
         params.search = search.trim();
       }
 
+      if (categorySearch.trim()) {
+        params.category = categorySearch.trim();
+      }
+
+      if (skuSearch.trim()) {
+        params.sku = skuSearch.trim();
+      }
+
       if (minPrice.trim()) {
         params.minPrice = minPrice.trim();
       }
 
       if (maxPrice.trim()) {
         params.maxPrice = maxPrice.trim();
+      }
+
+      if (sortBy) {
+        params.sort = sortBy;
       }
 
       const response = await apiClient.get<ProductsResponse>('/api/v1/admin/products', {
@@ -224,36 +263,104 @@ export default function ProductsPage() {
         <div className="space-y-4 mb-6">
           {/* Search */}
           <Card className="p-4">
-            <form onSubmit={handleSearch} className="flex gap-2">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search products..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <Button type="submit" variant="primary">
-                Search
-              </Button>
-              {search && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setSearch('');
-                    setPage(1);
-                    fetchProducts();
-                  }}
-                >
-                  Clear
+            <form onSubmit={handleSearch} className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by title or slug..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <Button type="submit" variant="primary">
+                  Search
                 </Button>
-              )}
+                {(search || categorySearch || skuSearch) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setSearch('');
+                      setCategorySearch('');
+                      setSkuSearch('');
+                      setPage(1);
+                    }}
+                  >
+                    Clear All
+                  </Button>
+                )}
+              </div>
+              
+              {/* Category and SKU Search */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Search by Category
+                  </label>
+                  <select
+                    value={categorySearch}
+                    onChange={(e) => {
+                      setCategorySearch(e.target.value);
+                      setPage(1);
+                    }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All Categories</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Search by SKU
+                  </label>
+                  <input
+                    type="text"
+                    value={skuSearch}
+                    onChange={(e) => {
+                      setSkuSearch(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Enter SKU code..."
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
             </form>
           </Card>
 
-          {/* Filter by Price */}
+          {/* Sort Options */}
           <Card className="p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Filter by Price</h3>
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Sort Products</h3>
+            <div className="flex items-center gap-3">
+              <label className="block text-xs font-medium text-gray-700">
+                Sort by:
+              </label>
+              <select
+                value={sortBy}
+                onChange={(e) => {
+                  setSortBy(e.target.value);
+                  setPage(1);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="createdAt-desc">Newest First</option>
+                <option value="createdAt-asc">Oldest First</option>
+                <option value="price-desc">Price: High to Low</option>
+                <option value="price-asc">Price: Low to High</option>
+                <option value="title-asc">Title: A to Z</option>
+                <option value="title-desc">Title: Z to A</option>
+              </select>
+            </div>
+          </Card>
+
+          {/* Analytics */}
+          <Card className="p-4">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Analytics</h3>
             <div className="flex gap-3 items-end">
               <div className="flex-1">
                 <label className="block text-xs font-medium text-gray-700 mb-1">

@@ -47,5 +47,8 @@ router.put('/settings', adminController.updateSettings);
 router.get('/settings/price-filter', adminController.getPriceFilterSettings);
 router.put('/settings/price-filter', adminController.updatePriceFilterSettings);
 
+// Analytics
+router.get('/analytics', adminController.getAnalytics);
+
 module.exports = router;
 
