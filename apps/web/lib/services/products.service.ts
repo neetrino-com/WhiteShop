@@ -105,6 +105,7 @@ class ProductsService {
 
     // Add category filter
     if (category) {
+      console.log('🔍 [PRODUCTS SERVICE] Looking for category:', { category, lang });
       const categoryDoc = await db.category.findFirst({
         where: {
           translations: {
@@ -119,6 +120,7 @@ class ProductsService {
       });
 
       if (categoryDoc) {
+        console.log('✅ [PRODUCTS SERVICE] Category found:', { id: categoryDoc.id, slug: category });
         if (where.OR) {
           where.AND = [
             { OR: where.OR },
@@ -136,6 +138,8 @@ class ProductsService {
             { categoryIds: { has: categoryDoc.id } },
           ];
         }
+      } else {
+        console.warn('⚠️ [PRODUCTS SERVICE] Category not found:', { category, lang });
       }
     }
 
@@ -149,6 +153,7 @@ class ProductsService {
     }
 
     // Get products
+    console.log('🔍 [PRODUCTS SERVICE] Fetching products with where clause:', JSON.stringify(where, null, 2));
     let products = await db.product.findMany({
       where,
       include: {
@@ -176,6 +181,8 @@ class ProductsService {
       skip,
       take: limit * 10, // Get more to filter in memory
     });
+    
+    console.log(`✅ [PRODUCTS SERVICE] Found ${products.length} products from database`);
 
     // Filter by price, colors, sizes, brand in memory
     if (minPrice || maxPrice) {
@@ -222,7 +229,7 @@ class ProductsService {
         }
         
         // Find variants that match ALL specified filters
-        const matchingVariants = variants.filter((variant: { options?: Array<{ attributeKey?: string | null; value?: string | null }> }) => {
+        const matchingVariants = variants.filter((variant: { id?: string; options?: Array<{ attributeKey?: string | null; value?: string | null }> }) => {
           const options = Array.isArray(variant.options) ? variant.options : [];
           
           if (options.length === 0) {
@@ -235,10 +242,19 @@ class ProductsService {
               (opt: { attributeKey?: string | null }) => opt.attributeKey === "color"
             );
             if (!colorOption || !colorOption.value) {
+              console.log('⚠️ [PRODUCTS SERVICE] Variant missing color option:', {
+                variantId: variant.id || 'unknown',
+                options: options.map((o: { attributeKey?: string | null; value?: string | null }) => ({ key: o.attributeKey, value: o.value }))
+              });
               return false;
             }
             const variantColorValue = colorOption.value.trim().toLowerCase();
             if (!colorList.includes(variantColorValue)) {
+              console.log('⚠️ [PRODUCTS SERVICE] Color mismatch:', {
+                variantId: variant.id || 'unknown',
+                variantColor: variantColorValue,
+                filterColors: colorList
+              });
               return false;
             }
           }
