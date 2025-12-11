@@ -87,6 +87,16 @@ class AdminService {
       },
       take: 100,
       orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        firstName: true,
+        lastName: true,
+        roles: true,
+        blocked: true,
+        createdAt: true,
+      },
     });
 
     return {
@@ -113,6 +123,17 @@ class AdminService {
         blocked: data.blocked,
         roles: data.roles,
       },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        firstName: true,
+        lastName: true,
+        roles: true,
+        blocked: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
   }
 
@@ -122,6 +143,7 @@ class AdminService {
   async deleteUser(userId: string) {
     const user = await db.user.findUnique({
       where: { id: userId },
+      select: { id: true },
     });
 
     if (!user) {
@@ -523,6 +545,7 @@ class AdminService {
         slug: translation?.slug || "",
         title: translation?.title || "",
         published: product.published,
+        featured: product.featured || false,
         price: variant?.price || 0,
         stock: variant?.stock || 0,
         discountPercent: product.discountPercent || 0, // Include discountPercent
@@ -1335,7 +1358,13 @@ class AdminService {
           some: {},
         },
       },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        firstName: true,
+        lastName: true,
+        createdAt: true,
         orders: {
           select: {
             id: true,
@@ -1870,6 +1899,13 @@ class AdminService {
       take: Math.floor(limit / 2),
       orderBy: { createdAt: "desc" },
       where: { deletedAt: null },
+      select: {
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        createdAt: true,
+      },
     });
 
     recentUsers.forEach((user: { firstName: string | null; lastName: string | null; email: string | null; phone: string | null; createdAt: Date }) => {

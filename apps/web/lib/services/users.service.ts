@@ -8,7 +8,13 @@ class UsersService {
   async getProfile(userId: string) {
     const user = await db.user.findUnique({
       where: { id: userId },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        firstName: true,
+        lastName: true,
+        locale: true,
         addresses: true,
       },
     });
@@ -42,6 +48,14 @@ class UsersService {
         firstName: data.firstName,
         lastName: data.lastName,
         locale: data.locale,
+      },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        firstName: true,
+        lastName: true,
+        locale: true,
       },
     });
 
@@ -80,6 +94,10 @@ class UsersService {
 
     const user = await db.user.findUnique({
       where: { id: userId },
+      select: {
+        id: true,
+        passwordHash: true,
+      },
     });
 
     if (!user || !user.passwordHash) {

@@ -12,6 +12,7 @@ interface Product {
   slug: string;
   title: string;
   published: boolean;
+  featured?: boolean;
   price: number;
   stock: number;
   colorStocks?: Array<{
@@ -47,6 +48,7 @@ export default function ProductsPage() {
   const [sortBy, setSortBy] = useState<string>('createdAt-desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [togglingAllFeatured, setTogglingAllFeatured] = useState(false);
 
   useEffect(() => {
     if (!isLoading) {
@@ -215,6 +217,62 @@ export default function ProductsPage() {
     } catch (err: any) {
       console.error('❌ [ADMIN] Error updating product status:', err);
       alert(`Error updating product status: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleToggleFeatured = async (productId: string, currentStatus: boolean, productTitle: string) => {
+    try {
+      const newStatus = !currentStatus;
+      
+      const updateData = {
+        featured: newStatus,
+      };
+      
+      console.log(`⭐ [ADMIN] Updating product featured status to ${newStatus ? 'featured' : 'not featured'}`);
+      
+      await apiClient.put(`/api/v1/admin/products/${productId}`, updateData);
+      
+      console.log(`✅ [ADMIN] Product ${newStatus ? 'marked as featured' : 'removed from featured'} successfully`);
+      
+      // Refresh products list
+      fetchProducts();
+    } catch (err: any) {
+      console.error('❌ [ADMIN] Error updating product featured status:', err);
+      alert(`Error updating featured status: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleToggleAllFeatured = async () => {
+    if (products.length === 0) return;
+
+    // Check if all products are featured
+    const allFeatured = products.every(p => p.featured);
+    const newStatus = !allFeatured;
+
+    setTogglingAllFeatured(true);
+    try {
+      const results = await Promise.allSettled(
+        products.map(product => 
+          apiClient.put(`/api/v1/admin/products/${product.id}`, { featured: newStatus })
+        )
+      );
+      
+      const failed = results.filter(r => r.status === 'rejected');
+      const successCount = products.length - failed.length;
+      
+      console.log(`✅ [ADMIN] Toggle all featured completed: ${successCount}/${products.length} successful`);
+      
+      // Refresh products list
+      await fetchProducts();
+      
+      if (failed.length > 0) {
+        alert(`Featured toggle finished. Success: ${successCount}/${products.length}. Some products failed to update.`);
+      }
+    } catch (err) {
+      console.error('❌ [ADMIN] Toggle all featured error:', err);
+      alert('Failed to update featured status for products');
+    } finally {
+      setTogglingAllFeatured(false);
     }
   };
 
@@ -394,6 +452,34 @@ export default function ProductsPage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Status
                       </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <div className="flex items-center justify-center gap-2">
+                          <span>Featured</span>
+                          <button
+                            onClick={handleToggleAllFeatured}
+                            disabled={togglingAllFeatured || products.length === 0}
+                            className="inline-flex items-center justify-center transition-all duration-200 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={products.every(p => p.featured) ? 'Remove all from featured' : 'Mark all as featured'}
+                          >
+                            <svg
+                              className={`w-5 h-5 transition-all duration-200 ${
+                                products.length > 0 && products.every(p => p.featured)
+                                  ? 'fill-blue-500 text-blue-500 drop-shadow-sm'
+                                  : 'fill-none stroke-blue-400 text-blue-400 opacity-70 hover:opacity-100'
+                              }`}
+                              viewBox="0 0 24 24"
+                              strokeWidth="1.5"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Created
                       </th>
@@ -468,6 +554,30 @@ export default function ProductsPage() {
                           >
                             {product.published ? 'Published' : 'Draft'}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <button
+                            onClick={() => handleToggleFeatured(product.id, product.featured || false, product.title)}
+                            className="inline-flex items-center justify-center w-8 h-8 transition-all duration-200 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+                            title={product.featured ? 'Click to remove from featured' : 'Click to mark as featured'}
+                          >
+                            <svg
+                              className={`w-6 h-6 transition-all duration-200 ${
+                                product.featured
+                                  ? 'fill-blue-500 text-blue-500 drop-shadow-sm'
+                                  : 'fill-none stroke-blue-400 text-blue-400 opacity-50 hover:opacity-75'
+                              }`}
+                              viewBox="0 0 24 24"
+                              strokeWidth="1.5"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                              />
+                            </svg>
+                          </button>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {new Date(product.createdAt).toLocaleDateString('hy-AM')}
