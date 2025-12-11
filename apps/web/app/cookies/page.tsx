@@ -6,23 +6,27 @@ import { Card } from '@shop/ui';
 export default function CookiesPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h1 className="text-4xl font-bold text-gray-900 mb-4">Cookie Policy</h1>
-      <p className="text-gray-600 mb-2">Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-      
-      <div className="space-y-6 mt-8">
-        <Card className="p-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">What Are Cookies?</h2>
-          <p className="text-gray-600 mb-4">
+      <Card className="p-6 sm:p-8 space-y-8">
+        <header className="space-y-2">
+          <h1 className="text-4xl font-bold text-gray-900">Cookie Policy</h1>
+          <p className="text-gray-600">
+            Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+        </header>
+
+        <section className="space-y-3">
+          <h2 className="text-2xl font-semibold text-gray-900">What Are Cookies?</h2>
+          <p className="text-gray-600">
             Cookies are small text files that are placed on your computer or mobile device when you visit a website. They are widely used to make websites work more efficiently and provide information to the website owners.
           </p>
           <p className="text-gray-600">
             Cookies allow a website to recognize your device and store some information about your preferences or past actions.
           </p>
-        </Card>
+        </section>
 
-        <Card className="p-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">How We Use Cookies</h2>
-          <p className="text-gray-600 mb-4">We use cookies for several purposes:</p>
+        <section className="space-y-3">
+          <h2 className="text-2xl font-semibold text-gray-900">How We Use Cookies</h2>
+          <p className="text-gray-600">We use cookies for several purposes:</p>
           <ul className="list-disc list-inside text-gray-600 space-y-2 ml-4">
             <li>
               <strong>Essential Cookies:</strong> These cookies are necessary for the website to function properly. They enable basic functions like page navigation and access to secure areas of the website.
@@ -37,10 +41,10 @@ export default function CookiesPage() {
               <strong>Targeting/Advertising Cookies:</strong> These cookies may be set through our site by our advertising partners to build a profile of your interests and show you relevant content on other sites.
             </li>
           </ul>
-        </Card>
+        </section>
 
-        <Card className="p-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Types of Cookies We Use</h2>
+        <section className="space-y-4">
+          <h2 className="text-2xl font-semibold text-gray-900">Types of Cookies We Use</h2>
           <div className="space-y-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Session Cookies</h3>
@@ -61,11 +65,11 @@ export default function CookiesPage() {
               </p>
             </div>
           </div>
-        </Card>
+        </section>
 
-        <Card className="p-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Managing Cookies</h2>
-          <p className="text-gray-600 mb-4">
+        <section className="space-y-4">
+          <h2 className="text-2xl font-semibold text-gray-900">Managing Cookies</h2>
+          <p className="text-gray-600">
             You have the right to decide whether to accept or reject cookies. You can exercise your cookie rights by setting your preferences in your browser settings.
           </p>
           <div className="space-y-3">
@@ -98,10 +102,10 @@ export default function CookiesPage() {
               </p>
             </div>
           </div>
-        </Card>
+        </section>
 
-        <Card className="p-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Cookies We Use</h2>
+        <section className="space-y-4">
+          <h2 className="text-2xl font-semibold text-gray-900">Cookies We Use</h2>
           <div className="space-y-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Essential Cookies</h3>
@@ -122,25 +126,25 @@ export default function CookiesPage() {
               </p>
             </div>
           </div>
-        </Card>
+        </section>
 
-        <Card className="p-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Updates to This Policy</h2>
+        <section className="space-y-3">
+          <h2 className="text-2xl font-semibold text-gray-900">Updates to This Policy</h2>
           <p className="text-gray-600">
             We may update this Cookie Policy from time to time to reflect changes in our practices or for other operational, legal, or regulatory reasons. Please revisit this Cookie Policy regularly to stay informed about our use of cookies.
           </p>
-        </Card>
+        </section>
 
-        <Card className="p-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Contact Us</h2>
+        <section className="space-y-3">
+          <h2 className="text-2xl font-semibold text-gray-900">Contact Us</h2>
           <p className="text-gray-600">
             If you have any questions about our use of cookies, please contact us at:{' '}
             <a href="mailto:privacy@whiteshop.com" className="text-blue-600 hover:underline">
               privacy@whiteshop.com
             </a>
           </p>
-        </Card>
-      </div>
+        </section>
+      </Card>
     </div>
   );
 }

@@ -418,6 +418,8 @@ export function Header() {
     return result;
   };
 
+  const selectedCurrencyInfo = CURRENCIES[selectedCurrency];
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -513,7 +515,14 @@ export function Header() {
     router.push(queryString ? `/products?${queryString}` : '/products');
   };
 
+  /**
+   * Updates currency selection and notifies the app with a visible log entry.
+   */
   const handleCurrencyChange = (currency: CurrencyCode) => {
+    console.info('[Header][LangCurrency] Currency changed', {
+      from: selectedCurrency,
+      to: currency,
+    });
     setStoredCurrency(currency);
     setSelectedCurrency(currency);
     setShowCurrency(false);
@@ -574,7 +583,7 @@ export function Header() {
             </div>
 
             {/* Currency and Google Translate */}
-            <div className="flex flex-wrap items-center gap-4 sm:justify-end">
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end">
               <GoogleTranslate />
               <div className="relative" ref={currencyRef}>
                 <button
@@ -582,13 +591,14 @@ export function Header() {
                   onClick={() => {
                     setShowCurrency(!showCurrency);
                   }}
-                  className="flex items-center gap-1 cursor-pointer text-gray-700 hover:text-gray-900 transition-colors"
+                  className="flex items-center gap-2 bg-white px-3 py-2 text-gray-800 transition-colors hover:bg-gray-50"
                 >
-                  <span className="text-sm font-medium">{selectedCurrency}</span>
+                  <span className="text-base font-semibold leading-none">{selectedCurrencyInfo.symbol}</span>
+                  <span className="text-sm font-medium leading-none">{selectedCurrency}</span>
                   <ChevronDownIcon />
                 </button>
                 {showCurrency && (
-                  <div className="absolute top-full right-0 mt-2 w-40 bg-white rounded-xl shadow-2xl border border-gray-200/80 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute top-full right-0 mt-2 w-40 bg-white z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                     {Object.values(CURRENCIES).map((currency) => (
                       <button
                         key={currency.code}
@@ -644,13 +654,14 @@ export function Header() {
                   onClick={() => {
                     setShowMobileCurrency(!showMobileCurrency);
                   }}
-                  className="flex h-10 items-center justify-center gap-1 rounded-full border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors cursor-pointer"
+                  className="flex h-10 items-center justify-center gap-2 bg-white px-3 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 transition-colors cursor-pointer"
                 >
-                  <span className="text-sm font-medium">{selectedCurrency}</span>
+                  <span className="text-base font-semibold leading-none">{selectedCurrencyInfo.symbol}</span>
+                  <span className="text-sm font-medium leading-none">{selectedCurrency}</span>
                   <ChevronDownIcon />
                 </button>
                 {showMobileCurrency && (
-                  <div className="absolute top-full right-0 mt-2 w-40 bg-white rounded-xl shadow-2xl border border-gray-200/80 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute top-full right-0 mt-2 w-40 bg-white shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                     {Object.values(CURRENCIES).map((currency) => (
                       <button
                         key={currency.code}
@@ -658,10 +669,11 @@ export function Header() {
                           handleCurrencyChange(currency.code);
                           setShowMobileCurrency(false);
                         }}
-                        className={`w-full text-left px-4 py-2.5 text-sm transition-all duration-150 ${selectedCurrency === currency.code
+                        className={`w-full text-left px-4 py-2.5 text-sm transition-all duration-150 ${
+                          selectedCurrency === currency.code
                             ? 'bg-gradient-to-r from-gray-100 to-gray-50 text-gray-900 font-semibold'
                             : 'text-gray-700 hover:bg-gray-50'
-                          }`}
+                        }`}
                       >
                         <div className="flex items-center justify-between">
                           <span>{currency.code}</span>

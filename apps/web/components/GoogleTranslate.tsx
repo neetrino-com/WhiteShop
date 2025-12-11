@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import Script from 'next/script';
 import { LANGUAGES, type LanguageCode } from '../lib/language';
 
@@ -11,12 +12,48 @@ const ChevronDownIcon = () => (
 );
 
 // Language icons/emojis
-const getLanguageIcon = (code: LanguageCode): string => {
-  const icons: Record<LanguageCode, string> = {
-    en: '🇬🇧',
-    hy: '🇦🇲',
-    ru: '🇷🇺',
-    ka: '🇬🇪',
+const getLanguageIcon = (code: LanguageCode): React.ReactNode => {
+  const icons: Record<LanguageCode, React.ReactNode> = {
+    en: (
+      <Image
+        src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Flag_of_the_United_Kingdom_%283-5%29.svg/1024px-Flag_of_the_United_Kingdom_%283-5%29.svg.png"
+        alt="English"
+        width={30}
+        height={30}
+        className="rounded"
+        unoptimized
+      />
+    ),
+    hy: (
+      <Image
+          src="https://janarmenia.com/uploads/0000/83/2022/04/28/anthem-armenia.jpg"
+        alt="Armenian"
+        width={30}
+        height={30}
+         className="rounded"
+        unoptimized
+      />
+    ),
+    ru: (
+      <Image
+        src="https://flagfactoryshop.com/image/cache/catalog/products/flags/national/mockups/russia_coa-600x400.jpg"
+        alt="Russian"
+        width={30}
+        height={30}
+         className="rounded"
+        unoptimized
+      />
+    ),
+    ka: (
+      <Image
+        src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRqHb4LNq5xqV85VxehTa7JFyB4SVIQqrWtA&s"
+        alt="Georgian"
+        width={30}
+        height={30}
+         className="rounded"
+        unoptimized
+      />
+    ),
   };
   return icons[code] || '🌐';
 };
@@ -236,8 +273,16 @@ export function GoogleTranslate() {
     };
   }, []);
 
+  /**
+   * Switches the page language via Google Translate and logs the change.
+   */
   const changeLanguage = (langCode: LanguageCode) => {
     if (typeof window !== 'undefined' && currentLang !== langCode) {
+      console.info('[Header][LangCurrency] Changing language', {
+        from: currentLang,
+        to: langCode,
+      });
+
       const langMap: Record<LanguageCode, string> = {
         en: 'en',
         hy: 'hy',
@@ -274,15 +319,20 @@ export function GoogleTranslate() {
   return (
     <>
       <div className="relative" ref={menuRef}>
-        <div
-          onClick={() => setShowMenu(!showMenu)}
-          className="flex items-center gap-1 cursor-pointer text-gray-700 hover:text-gray-900 transition-colors"
-        >
-          <span className="text-sm">{LANGUAGES[currentLang].code.toUpperCase()}</span>
-          <ChevronDownIcon />
-        </div>
+            <button
+              type="button"
+              onClick={() => setShowMenu(!showMenu)}
+              aria-expanded={showMenu}
+              className="flex items-center gap-2 bg-white px-3 py-2 text-gray-800 transition-colors hover:bg-gray-50"
+            >
+              <span className="flex h-8 w-8 items-center justify-center text-lg leading-none">
+                {getLanguageIcon(currentLang)}
+              </span>
+              <span className="text-sm font-medium">{LANGUAGES[currentLang].name}</span>
+              <ChevronDownIcon />
+            </button>
         {showMenu && (
-          <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-200/80 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="absolute top-full right-0 mt-2 w-48 bg-white shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
             {Object.values(LANGUAGES).map((lang) => {
               const isActive = currentLang === lang.code;
               const icon = getLanguageIcon(lang.code);
