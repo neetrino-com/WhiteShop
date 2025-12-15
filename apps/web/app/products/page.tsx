@@ -50,13 +50,14 @@ async function getProducts(
   maxPrice?: string,
   colors?: string,
   sizes?: string,
-  brand?: string
+  brand?: string,
+  limit: number = 24
 ): Promise<ProductsResponse> {
   try {
     const language = getStoredLanguage();
     const params: Record<string, string> = {
       page: page.toString(),
-      limit: '24',
+      limit: limit.toString(),
       lang: language,
     };
 
@@ -109,6 +110,9 @@ async function getProducts(
 export default async function ProductsPage({ searchParams }: any) {
   const params = searchParams ? await searchParams : {};
   const page = parseInt(params?.page || "1", 10);
+  const perPage = Number.isNaN(parseInt(params?.limit, 10))
+    ? 24
+    : parseInt(params?.limit, 10);
 
   const productsData = await getProducts(
     page,
@@ -118,7 +122,8 @@ export default async function ProductsPage({ searchParams }: any) {
     params?.maxPrice,
     params?.colors,
     params?.sizes,
-    params?.brand
+    params?.brand,
+    perPage
   );
 
   // ------------------------------------
@@ -162,7 +167,10 @@ export default async function ProductsPage({ searchParams }: any) {
       
       {/* Products Header - With Container */}
       <div className={PAGE_CONTAINER}>
-        <ProductsHeader />
+        <ProductsHeader
+          total={productsData.meta.total}
+          perPage={productsData.meta.limit}
+        />
       </div>
 
       <div className={`${PAGE_CONTAINER} flex gap-8`}>

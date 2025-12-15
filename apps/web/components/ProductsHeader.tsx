@@ -6,6 +6,17 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 type ViewMode = 'list' | 'grid-2' | 'grid-3';
 type SortOption = 'default' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc';
 
+interface ProductsHeaderProps {
+  /**
+   * Ընդհանուր ապրանքների քանակը՝ բոլոր էջերում (from API meta.total)
+   */
+  total: number;
+  /**
+   * Մի էջում ցուցադրվող ապրանքների քանակը (from API meta.limit)
+   */
+  perPage: number;
+}
+
 const sortOptions: { value: SortOption; label: string }[] = [
   { value: 'default', label: 'Default sorting' },
   { value: 'price-asc', label: 'Price: Low to High' },
@@ -14,13 +25,24 @@ const sortOptions: { value: SortOption; label: string }[] = [
   { value: 'name-desc', label: 'Name: Z to A' },
 ];
 
-function ProductsHeaderContent() {
+function ProductsHeaderContent({ total, perPage }: ProductsHeaderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [viewMode, setViewMode] = useState<ViewMode>('grid-3');
   const [sortBy, setSortBy] = useState<SortOption>('default');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Derive current "show per page" value from URL or fallback to perPage prop
+  const limitFromUrl = searchParams.get('limit');
+  const currentLimit = Number.isNaN(parseInt(limitFromUrl || '', 10))
+    ? perPage
+    : parseInt(limitFromUrl as string, 10);
+
+  const hasActiveFilters = (() => {
+    const filterKeys = ['search', 'category', 'minPrice', 'maxPrice', 'colors', 'sizes', 'brand'];
+    return filterKeys.some((key) => !!searchParams.get(key));
+  })();
 
   // Load view mode from localStorage
   useEffect(() => {
@@ -76,12 +98,58 @@ function ProductsHeaderContent() {
     router.push(`/products?${params.toString()}`);
   };
 
+  const handleClearFilters = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    const filterKeys = ['search', 'category', 'minPrice', 'maxPrice', 'colors', 'sizes', 'brand'];
+
+    filterKeys.forEach((key) => params.delete(key));
+    // Reset page when filters are cleared
+    params.delete('page');
+
+    const queryString = params.toString();
+    router.push(queryString ? `/products?${queryString}` : '/products');
+  };
+
+  const handleLimitChange = (value: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('limit', value.toString());
+    // Reset page when page size changes
+    params.delete('page');
+
+    router.push(`/products?${params.toString()}`);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        {/* View Mode Icons */}
-        <div className="flex flex-wrap items-center gap-3 sm:justify-end">
-          <div className="flex items-center gap-2">
+        {/* Left: All Products + Clear Filters */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <div className="text-left">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+              All Products
+              <span className="ml-2 text-sm font-medium text-gray-500">
+                ({total})
+              </span>
+            </h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">
+              Showing {Math.min(currentLimit, total)} products per page
+            </p>
+          </div>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="inline-flex items-center text-xs sm:text-sm text-gray-600 hover:text-gray-900 underline underline-offset-4"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+
+        {/* Right: View Mode Icons + Sort + Show */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          {/* View Mode Icons */}
+          <div className="flex items-center gap-2 justify-end">
             <button
               onClick={() => handleViewModeChange('list')}
               className={`rounded-md border border-transparent p-2 transition-colors ${
@@ -137,8 +205,8 @@ function ProductsHeaderContent() {
           </div>
         </div>
 
-        {/* Sort Controls */}
-        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+        {/* Sort Controls + Show select */}
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end mt-2 sm:mt-0">
           {/* Native select for mobile */}
           <div className="sm:hidden">
             <label htmlFor="products-sort" className="sr-only">
@@ -195,13 +263,29 @@ function ProductsHeaderContent() {
               </div>
             )}
           </div>
+
+          {/* Show (page size) selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs sm:text-sm text-gray-600">Show</span>
+            <select
+              value={currentLimit}
+              onChange={(event) => handleLimitChange(parseInt(event.target.value, 10))}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs sm:text-sm text-gray-700 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-200"
+            >
+              {[10, 20, 50].map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-export function ProductsHeader() {
+export function ProductsHeader(props: ProductsHeaderProps) {
   return (
     <Suspense fallback={
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-4">
@@ -210,7 +294,7 @@ export function ProductsHeader() {
         </div>
       </div>
     }>
-      <ProductsHeaderContent />
+      <ProductsHeaderContent {...props} />
     </Suspense>
   );
 }
