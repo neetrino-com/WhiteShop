@@ -96,7 +96,7 @@ export default function ProductsPage() {
         params.maxPrice = maxPrice.trim();
       }
 
-      // Սերվերի սորտավորում сейчас աջակցում է միայն createdAt դաշտով
+      // Սերվերը հիմա աջակցում է միայն createdAt դաշտով սորտավորում
       if (sortBy && sortBy.startsWith('createdAt')) {
         params.sort = sortBy;
       }
@@ -171,6 +171,41 @@ export default function ProductsPage() {
     // fetchProducts will be called automatically by useEffect
   };
 
+  // Լոկալ (client-side) սորտավորում Product / Price սյունակների համար
+  const sortedProducts = useMemo(() => {
+    if (!Array.isArray(products)) return [];
+
+    // Եթե սորտը createdAt-ով է, թողնում ենք ինչպես սերվերն է բերել
+    if (!sortBy || sortBy.startsWith('createdAt')) {
+      return products;
+    }
+
+    const [field, directionRaw] = sortBy.split('-');
+    const direction = directionRaw === 'asc' ? 1 : -1;
+
+    console.log('📊 [ADMIN] Applying client-side sort:', { field, direction: directionRaw });
+
+    const cloned = [...products];
+
+    if (field === 'price') {
+      cloned.sort((a, b) => {
+        const aPrice = a.price ?? 0;
+        const bPrice = b.price ?? 0;
+        if (aPrice === bPrice) return 0;
+        return aPrice > bPrice ? direction : -direction;
+      });
+    } else if (field === 'title') {
+      cloned.sort((a, b) => {
+        const aTitle = (a.title || '').toLowerCase();
+        const bTitle = (b.title || '').toLowerCase();
+        if (aTitle === bTitle) return 0;
+        return aTitle > bTitle ? direction : -direction;
+      });
+    }
+
+    return cloned;
+  }, [products, sortBy]);
+
   /**
    * Սորտավորում սյունակի վերնագրերի սեղմման ժամանակ
    * field === 'price' → price-asc / price-desc
@@ -211,41 +246,6 @@ export default function ProductsPage() {
       return next;
     });
   };
-
-  // Լոկալ սորտավորում client-side Product / Price սյունակների համար
-  const sortedProducts = useMemo(() => {
-    if (!Array.isArray(products)) return [];
-
-    // createdAt սորտավորումը թողնում ենք սերվերին (default), այստեղ չենք դիպչում
-    if (!sortBy || sortBy.startsWith('createdAt')) {
-      return products;
-    }
-
-    const [field, directionRaw] = sortBy.split('-');
-    const direction = directionRaw === 'asc' ? 1 : -1;
-
-    console.log('📊 [ADMIN] Applying client-side sort:', { field, direction: directionRaw });
-
-    const cloned = [...products];
-
-    if (field === 'price') {
-      cloned.sort((a, b) => {
-        const aPrice = a.price ?? 0;
-        const bPrice = b.price ?? 0;
-        if (aPrice === bPrice) return 0;
-        return aPrice > bPrice ? direction : -direction;
-      });
-    } else if (field === 'title') {
-      cloned.sort((a, b) => {
-        const aTitle = (a.title || '').toLowerCase();
-        const bTitle = (b.title || '').toLowerCase();
-        if (aTitle === bTitle) return 0;
-        return aTitle > bTitle ? direction : -direction;
-      });
-    }
-
-    return cloned;
-  }, [products, sortBy]);
 
   const handleDeleteProduct = async (productId: string, productTitle: string) => {
     if (!confirm(`Are you sure you want to delete "${productTitle}"? This action cannot be undone.`)) {
@@ -519,7 +519,7 @@ export default function ProductsPage() {
                               ▼
                             </span>
                           </span>
-                        </button>
+                        </button> 
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Stock

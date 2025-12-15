@@ -611,7 +611,7 @@ export function Header() {
                   onClick={() => {
                     setShowCurrency(!showCurrency);
                   }}
-                  className="flex items-center gap-2 bg-white px-3 py-2 text-gray-800 transition-colors hover:bg-gray-50"
+                  className="flex items-center gap-2 bg-white px-3 py-2 text-gray-800 transition-colors"
                 >
                   <span className="text-base font-semibold leading-none">{selectedCurrencyInfo.symbol}</span>
                   <span className="text-sm font-medium leading-none">{selectedCurrency}</span>
@@ -674,7 +674,7 @@ export function Header() {
                   onClick={() => {
                     setShowMobileCurrency(!showMobileCurrency);
                   }}
-                  className="flex h-10 items-center justify-center gap-2 bg-white px-3 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50 transition-colors cursor-pointer"
+                  className="flex h-10 items-center justify-center gap-2 bg-white px-3 text-sm font-medium text-gray-800 shadow-sm transition-colors cursor-pointer"
                 >
                   <span className="text-base font-semibold leading-none">{selectedCurrencyInfo.symbol}</span>
                   <span className="text-sm font-medium leading-none">{selectedCurrency}</span>

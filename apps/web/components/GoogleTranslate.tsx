@@ -319,18 +319,18 @@ export function GoogleTranslate() {
   return (
     <>
       <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              onClick={() => setShowMenu(!showMenu)}
-              aria-expanded={showMenu}
-              className="flex items-center gap-2 bg-white px-3 py-2 text-gray-800 transition-colors hover:bg-gray-50"
-            >
-              <span className="flex h-8 w-8 items-center justify-center text-lg leading-none">
-                {getLanguageIcon(currentLang)}
-              </span>
-              <span className="text-sm font-medium">{LANGUAGES[currentLang].name}</span>
-              <ChevronDownIcon />
-            </button>
+        <button
+          type="button"
+          onClick={() => setShowMenu(!showMenu)}
+          aria-expanded={showMenu}
+          className="flex items-center gap-2 bg-white px-3 py-2 text-gray-800 transition-colors"
+        >
+          <span className="flex h-8 w-8 items-center justify-center text-lg leading-none">
+            {getLanguageIcon(currentLang)}
+          </span>
+          <span className="text-sm font-medium">{LANGUAGES[currentLang].name}</span>
+          <ChevronDownIcon />
+        </button>
         {showMenu && (
               <div className="absolute top-full right-0 mt-2 w-48 bg-white shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
             {Object.values(LANGUAGES).map((lang) => {
