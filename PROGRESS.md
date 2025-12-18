@@ -193,6 +193,7 @@
 - ✅ Unified product labels UI: created shared `ProductLabels` component with vertical stacking per corner and connected it to `ProductCard` and single product page for consistent labels across Home/Shop/listings
 - ✅ Fixed product variant selection logic: `findVariantByColorAndSize` now strictly follows user selection even if stock is 0, preventing accidental switch to a different size's stock limit
 - ✅ Updated product page UI: color and size buttons now display stock counts relevant to the current selection (e.g., size button shows stock for selected color) for better UX and clarity
+- ✅ Improved admin product add/edit: added a Quick Color Selection palette and enhanced the Color Palette UI with cards, icons, and better visual states to match reference design
 
 ## Ամփոփում
 
@@ -208,4 +209,3 @@
 - ⚠️ Data migration (եթե անհրաժեշտ է MongoDB-ից)
 
 Տես `MIGRATION-COMPLETE-FINAL.md` ավելի մանրամասն տեղեկությունների համար:
-

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../../lib/auth/AuthContext';
 import { Card, Button, Input } from '@shop/ui';
 import { apiClient } from '../../../../lib/api-client';
-import { getColorHex } from '../../../../lib/colorMap';
+import { getColorHex, COLOR_MAP } from '../../../../lib/colorMap';
 
 // Component for adding new color/size
 function NewColorSizeInput({ 
@@ -2050,6 +2050,36 @@ function AddProductPageContent() {
                               onAdd={(name) => addNewColorToVariant(variant.id, name)}
                               placeholder="Enter color name (e.g. Red, Blue)"
                             />
+
+                            {/* Quick Selection Palette */}
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                              <p className="text-xs font-medium text-gray-500 mb-2">Quick Add (Click to add):</p>
+                              <div className="flex flex-wrap gap-2">
+                                {['Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Grey', 'Pink', 'Purple', 'Orange', 'Brown', 'Beige'].map((colorName) => {
+                                  const hex = getColorHex(colorName);
+                                  const isAdded = variant.colors.some(c => c.colorLabel.toLowerCase() === colorName.toLowerCase());
+                                  return (
+                                    <button
+                                      key={colorName}
+                                      type="button"
+                                      onClick={() => addNewColorToVariant(variant.id, colorName)}
+                                      disabled={isAdded}
+                                      className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs transition-all ${
+                                        isAdded 
+                                          ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' 
+                                          : 'bg-white border-gray-300 text-gray-700 hover:border-gray-500 hover:shadow-sm'
+                                      }`}
+                                    >
+                                      <span 
+                                        className="w-3 h-3 rounded-full border border-gray-200"
+                                        style={{ backgroundColor: hex }}
+                                      />
+                                      {colorName}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </div>
                           
                           {/* Color Palette - Checkbox selection */}
@@ -2058,17 +2088,17 @@ function AddProductPageContent() {
                             
                             {/* Colors from attributes */}
                             {getColorAttribute() && getColorAttribute()!.values.length > 0 && (
-                              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
                                 {getColorAttribute()?.values.map((val) => {
                                   const isSelected = variant.colors.some((c) => c.colorValue === val.value);
                                   const colorHex = getColorHex(val.label);
                                   return (
                                     <label
                                       key={val.id}
-                                      className={`flex flex-col items-center justify-center cursor-pointer p-3 rounded-lg border-2 transition-all ${
+                                      className={`flex flex-col items-center justify-center cursor-pointer p-3 rounded-lg border-2 transition-all min-h-[100px] ${
                                         isSelected 
-                                          ? 'bg-gray-100 border-gray-500 shadow-sm' 
-                                          : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                                          ? 'bg-blue-50 border-blue-600 shadow-md ring-1 ring-blue-600' 
+                                          : 'bg-white border-gray-300 hover:bg-gray-50 hover:border-gray-400 shadow-sm'
                                       }`}
                                     >
                                       <input
@@ -2077,12 +2107,21 @@ function AddProductPageContent() {
                                         onChange={() => toggleVariantColor(variant.id, val.value, val.label)}
                                         className="sr-only"
                                       />
-                                      <span
-                                        className="inline-block w-8 h-8 rounded-full border-2 border-gray-300 mb-2 shadow-sm"
-                                        style={{ backgroundColor: colorHex }}
-                                      />
-                                      <span className={`text-xs font-medium text-center ${
-                                        isSelected ? 'text-gray-900' : 'text-gray-700'
+                                      <div className="relative">
+                                        <span
+                                          className="inline-block w-10 h-10 rounded-full border-2 border-gray-300 mb-2 shadow-inner"
+                                          style={{ backgroundColor: colorHex }}
+                                        />
+                                        {isSelected && (
+                                          <div className="absolute -top-1 -right-1 bg-blue-600 text-white rounded-full p-0.5 border border-white">
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                          </div>
+                                        )}
+                                      </div>
+                                      <span className={`text-sm font-semibold text-center mt-1 truncate w-full ${
+                                        isSelected ? 'text-blue-900' : 'text-gray-800'
                                       }`}>
                                         {val.label}
                                       </span>
@@ -2102,7 +2141,7 @@ function AddProductPageContent() {
                               
                               if (manuallyAddedColors.length > 0) {
                                 return (
-                                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
                                     {manuallyAddedColors.map((colorData) => {
                                       const isSelected = variant.colors.some((c) => c.colorValue === colorData.colorValue);
                                       const colorHex = getColorHex(colorData.colorLabel);
@@ -2110,10 +2149,10 @@ function AddProductPageContent() {
                                       return (
                                         <label
                                           key={colorData.colorValue}
-                                          className={`flex flex-col items-center justify-center cursor-pointer p-3 rounded-lg border-2 transition-all ${
+                                          className={`flex flex-col items-center justify-center cursor-pointer p-3 rounded-lg border-2 transition-all min-h-[100px] ${
                                             isSelected 
-                                              ? 'bg-gray-100 border-gray-500 shadow-sm' 
-                                              : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                                              ? 'bg-blue-50 border-blue-600 shadow-md ring-1 ring-blue-600' 
+                                              : 'bg-white border-gray-300 hover:bg-gray-50 hover:border-gray-400 shadow-sm'
                                           }`}
                                         >
                                           <input
@@ -2122,12 +2161,21 @@ function AddProductPageContent() {
                                             onChange={() => toggleVariantColor(variant.id, colorData.colorValue, colorData.colorLabel)}
                                             className="sr-only"
                                           />
-                                          <span
-                                            className="inline-block w-8 h-8 rounded-full border-2 border-gray-300 mb-2 shadow-sm"
-                                            style={{ backgroundColor: colorHex }}
-                                          />
-                                          <span className={`text-xs font-medium text-center ${
-                                            isSelected ? 'text-gray-900' : 'text-gray-700'
+                                          <div className="relative">
+                                            <span
+                                              className="inline-block w-10 h-10 rounded-full border-2 border-gray-300 mb-2 shadow-inner"
+                                              style={{ backgroundColor: colorHex }}
+                                            />
+                                            {isSelected && (
+                                              <div className="absolute -top-1 -right-1 bg-blue-600 text-white rounded-full p-0.5 border border-white">
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                                                </svg>
+                                              </div>
+                                            )}
+                                          </div>
+                                          <span className={`text-sm font-semibold text-center mt-1 truncate w-full ${
+                                            isSelected ? 'text-blue-900' : 'text-gray-800'
                                           }`}>
                                             {colorData.colorLabel}
                                           </span>
