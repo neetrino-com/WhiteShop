@@ -1174,6 +1174,30 @@ class AdminService {
         }
 
         // Delete existing variants
+        // First, delete cart items and update order items that reference these variants
+        // to avoid foreign key constraint errors
+        const existingVariants = await db.productVariant.findMany({
+          where: { productId },
+          select: { id: true },
+        });
+        
+        if (existingVariants.length > 0) {
+          const variantIds = existingVariants.map(v => v.id);
+          
+          // Delete cart items that reference these variants
+          await db.cartItem.deleteMany({
+            where: { variantId: { in: variantIds } },
+          });
+          
+          // Update order items to set variantId to null (since it's optional)
+          // This preserves order history while allowing variant deletion
+          await db.orderItem.updateMany({
+            where: { variantId: { in: variantIds } },
+            data: { variantId: null },
+          });
+        }
+        
+        // Now we can safely delete the variants
         await db.productVariant.deleteMany({
           where: { productId },
         });

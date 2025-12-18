@@ -115,6 +115,19 @@ export default function ProductsPage() {
     }
   };
 
+  /**
+   * Helper function to process image URLs
+   * Handles relative paths, absolute URLs and base64
+   */
+  const processImageUrl = (url: string | null) => {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    // For relative paths, ensure they start with a slash
+    return url.startsWith('/') ? url : `/${url}`;
+  };
+
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     setPage(1);
@@ -608,7 +621,7 @@ export default function ProductsPage() {
                           <div className="flex items-center">
                             {product.image && (
                               <img
-                                src={product.image}
+                                src={processImageUrl(product.image)}
                                 alt={product.title}
                                 className="h-12 w-12 rounded object-cover mr-3"
                               />

@@ -189,8 +189,10 @@
 - ✅ Added password reset fields to Prisma User model to fix missing column error (`passwordResetToken`, `passwordResetExpires`) — run Prisma migration/db push to apply
 - ✅ Updated all cart icons (header, mobile bottom nav, empty cart page) to use unified PNG icon from Flaticon (`https://cdn-icons-png.flaticon.com/512/3081/3081986.png`)
  - ✅ Admin մենյուից հեռացվել է `Filter by Price` / `price-filter-settings` կետը, logging ավելացված է `admin-menu.config.tsx`-ում (`[AdminMenu][Config] Loaded admin tabs`)
- - ✅ Profile orders modal: added \"Re-order\" action that re-adds all order items to cart and moved Shipping Address block under Order Summary for clearer layout
- - ✅ Unified product labels UI: created shared `ProductLabels` component with vertical stacking per corner and connected it to `ProductCard` and single product page for consistent labels across Home/Shop/listings
+- ✅ Profile orders modal: added \"Re-order\" action that re-adds all order items to cart and moved Shipping Address block under Order Summary for clearer layout
+- ✅ Unified product labels UI: created shared `ProductLabels` component with vertical stacking per corner and connected it to `ProductCard` and single product page for consistent labels across Home/Shop/listings
+- ✅ Fixed product variant selection logic: `findVariantByColorAndSize` now strictly follows user selection even if stock is 0, preventing accidental switch to a different size's stock limit
+- ✅ Updated product page UI: color and size buttons now display stock counts relevant to the current selection (e.g., size button shows stock for selected color) for better UX and clarity
 
 ## Ամփոփում
 

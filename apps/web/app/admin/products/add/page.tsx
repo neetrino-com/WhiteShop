@@ -84,21 +84,31 @@ interface Attribute {
   }>;
 }
 
+// Color data with images, stock, price, and sizes for each color
+interface ColorData {
+  colorValue: string;
+  colorLabel: string;
+  images: string[]; // Массив изображений для этого цвета (file upload)
+  stock: string; // Base stock for color (if no sizes)
+  price?: string; // Цена для этого конкретного цвета (опционально)
+  sizes: string[]; // Размеры для этого цвета
+  sizeStocks: Record<string, string>; // Stock для каждого размера этого цвета: { "S": "10", "M": "5" }
+  sizeLabels?: Record<string, string>; // Original labels for manually added sizes: { "s": "S" }
+}
+
+// Unified variant structure - один variant с несколькими цветами
+// Note: sizes are now managed at color level, not variant level
 interface Variant {
   id: string;
-  price: string;
+  price: string; // Общая цена для всех цветов (fallback, если color-ի price չկա)
   compareAtPrice: string;
-  stock: string;
   sku: string;
-  color: string;
-  colors: string[]; // Multiple colors support
-  colorStocks: Record<string, string>; // Stock for each color: { "red": "10", "blue": "5" }
-  colorLabels?: Record<string, string>; // Original labels for manually added colors: { "red": "Красный" }
-  size: string;
-  sizes: string[]; // Multiple sizes support
-  sizeStocks: Record<string, string>; // Stock for each size: { "S": "10", "M": "5" }
-  sizeLabels?: Record<string, string>; // Original labels for manually added sizes: { "s": "S" }
-  imageUrl: string;
+  // Deprecated: sizes and sizeStocks are now in ColorData
+  // Keeping for backward compatibility during migration
+  sizes?: string[]; 
+  sizeStocks?: Record<string, string>;
+  sizeLabels?: Record<string, string>;
+  colors: ColorData[]; // Массив цветов, каждый со своими изображениями, stock, price, и sizes
 }
 
 interface ProductLabel {
@@ -162,8 +172,8 @@ function AddProductPageContent() {
     labels: [] as ProductLabel[],
   });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const variantImageFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [variantImageTargetId, setVariantImageTargetId] = useState<string | null>(null);
+  const colorImageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [colorImageTarget, setColorImageTarget] = useState<{ variantId: string; colorValue: string } | null>(null);
   const [imageUploadLoading, setImageUploadLoading] = useState(false);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [newBrandName, setNewBrandName] = useState('');
@@ -234,16 +244,12 @@ function AddProductPageContent() {
           // Transform product data to form format
           // Note: colorAttribute and sizeAttribute are available in attributes array if needed
           
-          // Merge all variants into a single variant with all colors and sizes
-          // This makes editing easier - all colors and sizes in one place
-          const allColors = new Set<string>();
-          const allSizes = new Set<string>();
-          const colorStocksMap = new Map<string, string>();
-          const sizeStocksMap = new Map<string, string>();
+          // Merge all variants into a single variant with colors and their sizes
+          // Преобразуем старые варианты в новую структуру с ColorData, где sizes находятся в каждом color-ում
+          const colorDataMap = new Map<string, ColorData>(); // colorValue -> ColorData
           let firstPrice = '';
           let firstCompareAtPrice = '';
           let firstSku = '';
-          let firstImageUrl = '';
           
           (product.variants || []).forEach((variant: any, index: number) => {
             const color = variant.color || '';
@@ -254,57 +260,122 @@ function AddProductPageContent() {
               ? String(variant.stock) 
               : '';
             
-            // Collect all unique colors
+            // Collect colors with their images, sizes, and stocks
             if (color) {
-              allColors.add(color);
-              // Sum stock for this color if it appears in multiple variants
-              const currentStock = colorStocksMap.get(color) || '0';
-              const currentStockNum = parseInt(currentStock) || 0;
-              const variantStockNum = parseInt(stockValue) || 0;
-              colorStocksMap.set(color, String(currentStockNum + variantStockNum));
+              if (!colorDataMap.has(color)) {
+                // Get color label from attributes or use color value
+                const colorAttribute = attributes.find((attr) => attr.key === 'color');
+                const colorValueObj = colorAttribute?.values.find((v) => v.value === color);
+                const colorLabel = colorValueObj?.label || 
+                  (color.charAt(0).toUpperCase() + color.slice(1).replace(/-/g, ' '));
+                
+                // Initialize color data with empty sizes
+                const colorData: ColorData = {
+                  colorValue: color,
+                  colorLabel: colorLabel,
+                  images: smartSplitUrls(variant.imageUrl),
+                  stock: size ? '' : stockValue, // Base stock only if no size
+                  sizes: [],
+                  sizeStocks: {},
+                  sizeLabels: {},
+                };
+                
+                // If variant has size, add it to color's sizes
+                if (size) {
+                  colorData.sizes = [size];
+                  colorData.sizeStocks = { [size]: stockValue };
+                }
+                
+                colorDataMap.set(color, colorData);
+              } else {
+                // If color already exists, merge data
+                const existingColorData = colorDataMap.get(color)!;
+                
+                // Add images if not already present
+                if (variant.imageUrl) {
+                  const imageUrls = smartSplitUrls(variant.imageUrl);
+                  imageUrls.forEach((url: string) => {
+                    // Check for existence with normalization to prevent duplicates
+                    const exists = existingColorData.images.some(existingUrl => {
+                      if (url.startsWith('data:') || existingUrl.startsWith('data:')) {
+                        return url === existingUrl;
+                      }
+                      const n1 = existingUrl.startsWith('/') ? existingUrl : `/${existingUrl}`;
+                      const n2 = url.startsWith('/') ? url : `/${url}`;
+                      return n1 === n2 || existingUrl === url;
+                    });
+                    
+                    if (url && !exists) {
+                      existingColorData.images.push(url);
+                    }
+                  });
+                }
+                
+                // If variant has size, add it to color's sizes if not already present
+                if (size) {
+                  if (!existingColorData.sizes.includes(size)) {
+                    existingColorData.sizes.push(size);
+                  }
+                  // Update stock for this size
+                  existingColorData.sizeStocks[size] = stockValue;
+                } else {
+                  // If no size, update base stock (sum if multiple variants without sizes)
+                  const currentStockNum = parseInt(existingColorData.stock) || 0;
+                  const variantStockNum = parseInt(stockValue) || 0;
+                  existingColorData.stock = String(currentStockNum + variantStockNum);
+                }
+              }
             }
             
-            // Collect all unique sizes
-            if (size) {
-              allSizes.add(size);
-              // Sum stock for this size if it appears in multiple variants
-              const currentStock = sizeStocksMap.get(size) || '0';
-              const currentStockNum = parseInt(currentStock) || 0;
-              const variantStockNum = parseInt(stockValue) || 0;
-              sizeStocksMap.set(size, String(currentStockNum + variantStockNum));
-            }
-            
-            // Use first variant's price, compareAtPrice, sku, imageUrl as defaults
+            // Use first variant's price, compareAtPrice, sku as defaults
             if (index === 0) {
               firstPrice = variant.price !== undefined && variant.price !== null ? String(variant.price) : '';
               firstCompareAtPrice = variant.compareAtPrice !== undefined && variant.compareAtPrice !== null ? String(variant.compareAtPrice) : '';
               firstSku = variant.sku || '';
-              firstImageUrl = variant.imageUrl || '';
             }
           });
           
-          // Create a single merged variant with all colors and sizes
-          const mergedVariant = {
+          // Create a single merged variant with all colors (sizes are now in each color)
+          const mergedVariant: Variant = {
             id: `variant-${Date.now()}-${Math.random()}`,
             price: firstPrice,
             compareAtPrice: firstCompareAtPrice,
-            stock: '', // Stock is now per color/size, not per variant
             sku: firstSku,
-            color: '', // No single color - we have multiple
-            colors: Array.from(allColors),
-            colorStocks: Object.fromEntries(colorStocksMap),
-            size: '', // No single size - we have multiple
-            sizes: Array.from(allSizes),
-            sizeStocks: Object.fromEntries(sizeStocksMap),
-            imageUrl: firstImageUrl,
+            colors: Array.from(colorDataMap.values()),
           };
           
+          // Collect all images assigned to variants to filter them out from general media
+          const variantImages = new Set<string>();
+          mergedVariant.colors.forEach(c => {
+            c.images.forEach(img => {
+              if (img) {
+                variantImages.add(img);
+                // Also add normalized version for comparison
+                const normalized = img.startsWith('/') ? img : `/${img}`;
+                variantImages.add(normalized);
+              }
+            });
+          });
+
           const mediaList = product.media || [];
+          // Filter out images that are already assigned to variants
           const normalizedMedia = Array.isArray(mediaList)
-            ? mediaList.map((item: any) => (typeof item === 'string' ? item : item?.url || ''))
+            ? mediaList
+                .map((item: any) => (typeof item === 'string' ? item : item?.url || ''))
+                .filter((url: string) => {
+                  if (!url) return false;
+                  const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
+                  return !variantImages.has(url) && !variantImages.has(normalizedUrl);
+                })
             : [];
+          
           const featuredIndexFromApi = Array.isArray(mediaList)
-            ? mediaList.findIndex((item: any) => typeof item === 'object' && item?.isFeatured)
+            ? mediaList.findIndex((item: any) => {
+                const url = typeof item === 'string' ? item : item?.url || '';
+                if (!url) return false;
+                const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
+                return typeof item === 'object' && item?.isFeatured && !variantImages.has(url) && !variantImages.has(normalizedUrl);
+              })
             : -1;
 
           setFormData({
@@ -362,6 +433,49 @@ function AddProductPageContent() {
       .replace(/^-+|-+$/g, '');
   };
 
+  /**
+   * Helper function to process image URLs
+   * Handles relative paths, absolute URLs and base64
+   */
+  const processImageUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    // For relative paths, ensure they start with a slash
+    return url.startsWith('/') ? url : `/${url}`;
+  };
+
+  /**
+   * Smart split for comma-separated image URLs that handles Base64 data URIs
+   */
+  const smartSplitUrls = (str: string | null | undefined): string[] => {
+    if (!str) return [];
+    if (!str.includes('data:')) {
+      return str.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    
+    // If it contains data URIs, we need to be careful with commas
+    const parts = str.split(',');
+    const results: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i].trim();
+      if (part.startsWith('data:')) {
+        // This is the start of a data URI (e.g., "data:image/png;base64")
+        // The next part is the actual base64 data
+        if (i + 1 < parts.length) {
+          results.push(part + ',' + parts[i + 1].trim());
+          i++; // Skip the next part as it's been consumed
+        } else {
+          results.push(part);
+        }
+      } else if (part) {
+        results.push(part);
+      }
+    }
+    return results;
+  };
+
   const handleTitleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const title = e.target.value;
     setFormData((prev) => ({
@@ -408,17 +522,8 @@ function AddProductPageContent() {
       id: `variant-${Date.now()}`,
       price: '',
       compareAtPrice: '',
-      stock: '',
       sku: '',
-      color: '',
-      colors: [],
-      colorStocks: {},
-      colorLabels: {},
-      size: '',
-      sizes: [],
-      sizeStocks: {},
-      sizeLabels: {},
-      imageUrl: '',
+      colors: [], // Начинаем с пустого массива цветов
     };
     setFormData((prev) => ({
       ...prev,
@@ -426,37 +531,35 @@ function AddProductPageContent() {
     }));
   };
 
-  // Toggle color selection for variant
-  const toggleVariantColor = (variantId: string, colorValue: string) => {
+  // Toggle color selection for variant - добавляет/удаляет цвет с пустыми данными
+  const toggleVariantColor = (variantId: string, colorValue: string, colorLabel: string) => {
     setFormData((prev) => ({
       ...prev,
       variants: prev.variants.map((v) => {
         if (v.id === variantId) {
           const colors = v.colors || [];
-          const colorStocks = v.colorStocks || {};
-          const colorIndex = colors.indexOf(colorValue);
+          const colorIndex = colors.findIndex((c) => c.colorValue === colorValue);
+          
           if (colorIndex > -1) {
             // Remove color
-            const newColors = colors.filter((c) => c !== colorValue);
-            const newColorStocks = { ...colorStocks };
-            const newColorLabels = { ...(v.colorLabels || {}) };
-            delete newColorStocks[colorValue];
-            delete newColorLabels[colorValue];
-            return { 
-              ...v, 
-              colors: newColors, 
-              color: newColors[0] || '',
-              colorStocks: newColorStocks,
-              colorLabels: newColorLabels,
+            return {
+              ...v,
+              colors: colors.filter((_, idx) => idx !== colorIndex),
             };
           } else {
-            // Add color
-            const newColors = [...colors, colorValue];
-            return { 
-              ...v, 
-              colors: newColors, 
-              color: newColors[0] || '',
-              colorStocks: { ...colorStocks, [colorValue]: '' },
+            // Add color with empty images, stock, sizes
+            const newColor: ColorData = {
+              colorValue,
+              colorLabel,
+              images: [],
+              stock: '',
+              sizes: [],
+              sizeStocks: {},
+              sizeLabels: {},
+            };
+            return {
+              ...v,
+              colors: [...colors, newColor],
             };
           }
         }
@@ -473,10 +576,9 @@ function AddProductPageContent() {
         if (v.id === variantId) {
           return {
             ...v,
-            colorStocks: {
-              ...(v.colorStocks || {}),
-              [colorValue]: stock,
-            },
+            colors: v.colors.map((c) =>
+              c.colorValue === colorValue ? { ...c, stock } : c
+            ),
           };
         }
         return v;
@@ -484,57 +586,17 @@ function AddProductPageContent() {
     }));
   };
 
-  // Toggle size selection for variant
-  const toggleVariantSize = (variantId: string, sizeValue: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      variants: prev.variants.map((v) => {
-        if (v.id === variantId) {
-          const sizes = v.sizes || [];
-          const sizeStocks = v.sizeStocks || {};
-          const sizeIndex = sizes.indexOf(sizeValue);
-          if (sizeIndex > -1) {
-            // Remove size
-            const newSizes = sizes.filter((s) => s !== sizeValue);
-            const newSizeStocks = { ...sizeStocks };
-            const newSizeLabels = { ...(v.sizeLabels || {}) };
-            delete newSizeStocks[sizeValue];
-            delete newSizeLabels[sizeValue];
-            return { 
-              ...v, 
-              sizes: newSizes, 
-              size: newSizes[0] || '',
-              sizeStocks: newSizeStocks,
-              sizeLabels: newSizeLabels,
-            };
-          } else {
-            // Add size
-            const newSizes = [...sizes, sizeValue];
-            return { 
-              ...v, 
-              sizes: newSizes, 
-              size: newSizes[0] || '',
-              sizeStocks: { ...sizeStocks, [sizeValue]: '' },
-            };
-          }
-        }
-        return v;
-      }),
-    }));
-  };
-
-  // Update stock for a specific size
-  const updateSizeStock = (variantId: string, sizeValue: string, stock: string) => {
+  // Update price for a specific color
+  const updateColorPrice = (variantId: string, colorValue: string, price: string) => {
     setFormData((prev) => ({
       ...prev,
       variants: prev.variants.map((v) => {
         if (v.id === variantId) {
           return {
             ...v,
-            sizeStocks: {
-              ...(v.sizeStocks || {}),
-              [sizeValue]: stock,
-            },
+            colors: v.colors.map((c) =>
+              c.colorValue === colorValue ? { ...c, price } : c
+            ),
           };
         }
         return v;
@@ -542,7 +604,80 @@ function AddProductPageContent() {
     }));
   };
 
-  // Add new color directly to variant
+  // Toggle size selection for a specific color in variant
+  const toggleColorSize = (variantId: string, colorValue: string, sizeValue: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      variants: prev.variants.map((v) => {
+        if (v.id === variantId) {
+          return {
+            ...v,
+            colors: v.colors.map((c) => {
+              if (c.colorValue === colorValue) {
+                const sizes = c.sizes || [];
+                const sizeStocks = c.sizeStocks || {};
+                const sizeLabels = c.sizeLabels || {};
+                const sizeIndex = sizes.indexOf(sizeValue);
+                
+                if (sizeIndex > -1) {
+                  // Remove size
+                  const newSizes = sizes.filter((s) => s !== sizeValue);
+                  const newSizeStocks = { ...sizeStocks };
+                  const newSizeLabels = { ...sizeLabels };
+                  delete newSizeStocks[sizeValue];
+                  delete newSizeLabels[sizeValue];
+                  return {
+                    ...c,
+                    sizes: newSizes,
+                    sizeStocks: newSizeStocks,
+                    sizeLabels: newSizeLabels,
+                  };
+                } else {
+                  // Add size
+                  return {
+                    ...c,
+                    sizes: [...sizes, sizeValue],
+                    sizeStocks: { ...sizeStocks, [sizeValue]: '' },
+                  };
+                }
+              }
+              return c;
+            }),
+          };
+        }
+        return v;
+      }),
+    }));
+  };
+
+  // Update stock for a specific size in a specific color
+  const updateColorSizeStock = (variantId: string, colorValue: string, sizeValue: string, stock: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      variants: prev.variants.map((v) => {
+        if (v.id === variantId) {
+          return {
+            ...v,
+            colors: v.colors.map((c) => {
+              if (c.colorValue === colorValue) {
+                return {
+                  ...c,
+                  sizeStocks: {
+                    ...(c.sizeStocks || {}),
+                    [sizeValue]: stock,
+                  },
+                };
+              }
+              return c;
+            }),
+          };
+        }
+        return v;
+      }),
+    }));
+  };
+
+  // Add new color directly to variant (manual color entry)
   const addNewColorToVariant = (variantId: string, colorName: string) => {
     if (!colorName.trim()) return;
     
@@ -553,21 +688,26 @@ function AddProductPageContent() {
       variants: prev.variants.map((v) => {
         if (v.id === variantId) {
           const colors = v.colors || [];
-          const colorStocks = v.colorStocks || {};
-          const colorLabels = v.colorLabels || {};
           
           // Check if color already exists
-          if (colors.includes(colorValue)) {
+          if (colors.some((c) => c.colorValue === colorValue)) {
             return v; // Color already exists, don't add again
           }
           
-          // Add new color with original label and empty stock
+          // Add new color with empty images, stock, and sizes
+          const newColor: ColorData = {
+            colorValue,
+            colorLabel: trimmedName,
+            images: [],
+            stock: '',
+            sizes: [],
+            sizeStocks: {},
+            sizeLabels: {},
+          };
+          
           return {
             ...v,
-            colors: [...colors, colorValue],
-            color: colors.length === 0 ? colorValue : v.color,
-            colorStocks: { ...colorStocks, [colorValue]: '' },
-            colorLabels: { ...colorLabels, [colorValue]: trimmedName },
+            colors: [...colors, newColor],
           };
         }
         return v;
@@ -575,8 +715,8 @@ function AddProductPageContent() {
     }));
   };
 
-  // Add new size directly to variant
-  const addNewSizeToVariant = (variantId: string, sizeName: string) => {
+  // Add new size directly to a specific color in variant
+  const addNewSizeToColor = (variantId: string, colorValue: string, sizeName: string) => {
     if (!sizeName.trim()) return;
     
     const trimmedName = sizeName.trim();
@@ -585,22 +725,29 @@ function AddProductPageContent() {
       ...prev,
       variants: prev.variants.map((v) => {
         if (v.id === variantId) {
-          const sizes = v.sizes || [];
-          const sizeStocks = v.sizeStocks || {};
-          const sizeLabels = v.sizeLabels || {};
-          
-          // Check if size already exists
-          if (sizes.includes(sizeValue)) {
-            return v; // Size already exists, don't add again
-          }
-          
-          // Add new size with original label and empty stock
           return {
             ...v,
-            sizes: [...sizes, sizeValue],
-            size: sizes.length === 0 ? sizeValue : v.size,
-            sizeStocks: { ...sizeStocks, [sizeValue]: '' },
-            sizeLabels: { ...sizeLabels, [sizeValue]: trimmedName },
+            colors: v.colors.map((c) => {
+              if (c.colorValue === colorValue) {
+                const sizes = c.sizes || [];
+                const sizeStocks = c.sizeStocks || {};
+                const sizeLabels = c.sizeLabels || {};
+                
+                // Check if size already exists
+                if (sizes.includes(sizeValue)) {
+                  return c; // Size already exists, don't add again
+                }
+                
+                // Add new size with original label and empty stock
+                return {
+                  ...c,
+                  sizes: [...sizes, sizeValue],
+                  sizeStocks: { ...sizeStocks, [sizeValue]: '' },
+                  sizeLabels: { ...sizeLabels, [sizeValue]: trimmedName },
+                };
+              }
+              return c;
+            }),
           };
         }
         return v;
@@ -615,12 +762,75 @@ function AddProductPageContent() {
     }));
   };
 
-  const updateVariant = (variantId: string, field: keyof Variant, value: string) => {
+  const updateVariant = (variantId: string, field: keyof Variant, value: any) => {
     setFormData((prev) => ({
       ...prev,
       variants: prev.variants.map((v) =>
         v.id === variantId ? { ...v, [field]: value } : v
       ),
+    }));
+  };
+
+  // Add images to a specific color in variant
+  const addColorImages = (variantId: string, colorValue: string, images: string[]) => {
+    console.log('🖼️ [ADMIN] Adding images to color:', {
+      variantId,
+      colorValue,
+      imagesCount: images.length
+    });
+    
+    setFormData((prev) => {
+      const updated = {
+        ...prev,
+        variants: prev.variants.map((v) => {
+          if (v.id === variantId) {
+            const updatedColors = v.colors.map((c) => {
+              if (c.colorValue === colorValue) {
+                // Deduplicate new images
+                const uniqueNewImages = images.filter(newImg => !c.images.includes(newImg));
+                const newImages = [...c.images, ...uniqueNewImages];
+                
+                console.log('✅ [ADMIN] Updated color images:', {
+                  colorValue: c.colorValue,
+                  oldCount: c.images.length,
+                  newCount: newImages.length,
+                  addedCount: uniqueNewImages.length
+                });
+                return { ...c, images: newImages };
+              }
+              return c;
+            });
+            
+            return {
+              ...v,
+              colors: updatedColors,
+            };
+          }
+          return v;
+        }),
+      };
+      
+      return updated;
+    });
+  };
+
+  // Remove image from a specific color
+  const removeColorImage = (variantId: string, colorValue: string, imageIndex: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      variants: prev.variants.map((v) => {
+        if (v.id === variantId) {
+          return {
+            ...v,
+            colors: v.colors.map((c) =>
+              c.colorValue === colorValue
+                ? { ...c, images: c.images.filter((_, idx) => idx !== imageIndex) }
+                : c
+            ),
+          };
+        }
+        return v;
+      }),
     }));
   };
 
@@ -657,17 +867,11 @@ function AddProductPageContent() {
           id: `variant-${Date.now()}`,
           price: value,
           compareAtPrice: '',
-          stock: '',
           sku: '',
-          color: '',
-          colors: [],
-          colorStocks: {},
-          colorLabels: {},
-          size: '',
           sizes: [],
           sizeStocks: {},
           sizeLabels: {},
-          imageUrl: '',
+          colors: [],
         };
         return {
           ...prev,
@@ -786,18 +990,20 @@ function AddProductPageContent() {
     }
   };
 
-  const handleUploadVariantImage = async (event: ChangeEvent<HTMLInputElement>) => {
+  // Upload images for a specific color in variant
+  const handleUploadColorImages = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
-    if (!files.length || !variantImageTargetId) {
+    if (!files.length || !colorImageTarget) {
+      console.log('⚠️ [ADMIN] No files or no color target:', { filesLength: files.length, colorImageTarget });
       if (event.target) {
         event.target.value = '';
       }
       return;
     }
 
-    const [file] = files;
-    if (!file.type.startsWith('image/')) {
-      alert(`"${file.name}" is not an image file`);
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      alert('Please select image files');
       if (event.target) {
         event.target.value = '';
       }
@@ -805,16 +1011,34 @@ function AddProductPageContent() {
     }
 
     try {
-      const base64 = await fileToBase64(file);
-      updateVariant(variantImageTargetId, 'imageUrl', base64);
+      setImageUploadLoading(true);
+      console.log('📤 [ADMIN] Starting upload for color:', colorImageTarget.colorValue, 'Files:', imageFiles.length);
+      
+      const uploadedImages = await Promise.all(
+        imageFiles.map(async (file) => {
+          const base64 = await fileToBase64(file);
+          console.log('✅ [ADMIN] Image converted to base64, length:', base64.length);
+          return base64;
+        })
+      );
+
+      console.log('📥 [ADMIN] All images converted, adding to variant:', {
+        variantId: colorImageTarget.variantId,
+        colorValue: colorImageTarget.colorValue,
+        imagesCount: uploadedImages.length
+      });
+      
+      addColorImages(colorImageTarget.variantId, colorImageTarget.colorValue, uploadedImages);
+      console.log('✅ [ADMIN] Color images added to state:', uploadedImages.length);
     } catch (error: any) {
-      console.error('❌ [ADMIN] Error uploading variant image:', error);
-      alert(error?.message || 'Failed to process selected image');
+      console.error('❌ [ADMIN] Error uploading color images:', error);
+      alert(error?.message || 'Failed to process selected images');
     } finally {
+      setImageUploadLoading(false);
       if (event.target) {
         event.target.value = '';
       }
-      setVariantImageTargetId(null);
+      setColorImageTarget(null);
     }
   };
 
@@ -1004,9 +1228,17 @@ function AddProductPageContent() {
       for (const variant of formData.variants) {
         const variantIndex = formData.variants.indexOf(variant) + 1;
         
+        // Validate price
         const priceValue = parseFloat(variant.price);
         if (!variant.price || isNaN(priceValue) || priceValue <= 0) {
           alert(`Վարիանտ ${variantIndex}: Խնդրում ենք մուտքագրել վավեր գին, որը 0-ից մեծ է`);
+          setLoading(false);
+          return;
+        }
+        
+        // Validate that at least one color is selected
+        if (!variant.colors || variant.colors.length === 0) {
+          alert(`Վարիանտ ${variantIndex}: Խնդրում ենք ընտրել առնվազն մեկ գույն`);
           setLoading(false);
           return;
         }
@@ -1026,87 +1258,50 @@ function AddProductPageContent() {
         }
         skuSet.add(variantSku);
         
-        // Validate sizes and stocks for clothing and shoes
+        // Validate colors, sizes, and stocks
         const categoryRequiresSizes = isClothingCategory();
+        const colorData = variant.colors && variant.colors.length > 0 ? variant.colors : [];
         
-        // Check if variant has sizes (either from array or simple text field)
-        const hasSizesArray = variant.sizes && variant.sizes.length > 0;
-        const hasSimpleSize = variant.size && variant.size.trim() !== '';
-        const hasAnySize = hasSizesArray || hasSimpleSize;
-        
-        console.log('🔍 [VALIDATION] Checking variant:', {
-          variantIndex: formData.variants.indexOf(variant) + 1,
-          categoryRequiresSizes,
-          hasSizesArray,
-          hasSimpleSize,
-          hasAnySize,
-          sizes: variant.sizes,
-          simpleSize: variant.size,
-          variant: variant
-        });
-        
-        if (categoryRequiresSizes) {
-          // If category requires sizes, check if variant has at least one size
-          if (!hasAnySize) {
-            console.error('❌ [VALIDATION] Size validation failed for variant:', {
-              variant,
-              categoryRequiresSizes,
-              hasSizesArray,
-              hasSimpleSize,
-              selectedCategory: categories.find((cat) => cat.id === formData.primaryCategoryId),
-              formDataPrimaryCategoryId: formData.primaryCategoryId
-            });
-            alert(`Վարիանտ ${formData.variants.indexOf(variant) + 1}: Այս կատեգորիայի համար պահանջվում է առնվազն մեկ չափս`);
-            setLoading(false);
-            return;
-          }
-          
-          // If using sizes array, validate stock for each size
-          if (hasSizesArray) {
-            const sizes = variant.sizes || [];
-            console.log('🔍 [VALIDATION] Category requires sizes, checking variant sizes:', sizes);
+        if (colorData.length > 0) {
+          for (const colorDataItem of colorData) {
+            const colorSizes = colorDataItem.sizes || [];
+            const colorSizeStocks = colorDataItem.sizeStocks || {};
             
-            for (const size of sizes) {
-              const stock = (variant.sizeStocks || {})[size];
-              if (!stock || stock.trim() === '' || parseInt(stock) < 0) {
-                const sizeLabel = getSizeAttribute()?.values.find((v) => v.value === size)?.label || size;
-                alert(`Վարիանտ ${formData.variants.indexOf(variant) + 1}: Խնդրում ենք մուտքագրել պահեստ "${sizeLabel}" չափսի համար`);
+            // If category requires sizes, check if color has at least one size
+            if (categoryRequiresSizes) {
+              if (colorSizes.length === 0) {
+                alert(`Վարիանտ ${variantIndex}: Գույն "${colorDataItem.colorLabel}"-ի համար պահանջվում է առնվազն մեկ չափս`);
                 setLoading(false);
                 return;
               }
+              
+              // Validate stock for each size of this color
+              for (const size of colorSizes) {
+                const stock = colorSizeStocks[size];
+                if (!stock || stock.trim() === '' || parseInt(stock) < 0) {
+                  const sizeLabel = getSizeAttribute()?.values.find((v) => v.value === size)?.label || 
+                    colorDataItem.sizeLabels?.[size] || 
+                    size.toUpperCase().replace(/-/g, ' ');
+                  alert(`Վարիանտ ${variantIndex}: Գույն "${colorDataItem.colorLabel}" - Խնդրում ենք մուտքագրել պահեստ "${sizeLabel}" չափսի համար`);
+                  setLoading(false);
+                  return;
+                }
+              }
+            } else {
+              // If category doesn't require sizes, validate base stock for color
+              if (colorSizes.length === 0) {
+                if (!colorDataItem.stock || colorDataItem.stock.trim() === '' || parseInt(colorDataItem.stock) < 0) {
+                  alert(`Վարիանտ ${variantIndex}: Խնդրում ենք մուտքագրել պահեստ "${colorDataItem.colorLabel}" գույնի համար`);
+                  setLoading(false);
+                  return;
+                }
+              }
             }
-          }
-          // If using simple size field, validate general stock
-          else if (hasSimpleSize && (!variant.stock || variant.stock.trim() === '' || parseInt(variant.stock) < 0)) {
-            alert(`Վարիանտ ${formData.variants.indexOf(variant) + 1}: Խնդրում ենք մուտքագրել պահեստ`);
-            setLoading(false);
-            return;
-          }
-        }
-
-        // Validate colors and stocks
-        const colors = variant.colors && variant.colors.length > 0 ? variant.colors : [];
-        if (colors.length > 0) {
-          for (const color of colors) {
-            const stock = (variant.colorStocks || {})[color];
-            if (!stock || stock.trim() === '' || parseInt(stock) < 0) {
-              const colorLabel = getColorAttribute()?.values.find((v) => v.value === color)?.label || color;
-              alert(`Variant ${formData.variants.indexOf(variant) + 1}: Please enter stock for color "${colorLabel}"`);
-              setLoading(false);
-              return;
-            }
-          }
-        } else if (!variant.stock || parseInt(variant.stock) < 0) {
-          // If no colors, validate general stock (only if no sizes or not clothing)
-          if (!isClothingCategory() || (variant.sizes || []).length === 0) {
-            alert(`Variant ${formData.variants.indexOf(variant) + 1}: Please enter stock`);
-            setLoading(false);
-            return;
           }
         }
       }
 
-      // Prepare media array
+      // Prepare media array - включаем изображения из основных imageUrls и изображения цветов
       const orderedImageUrls = [...formData.imageUrls];
       if (
         orderedImageUrls.length > 0 &&
@@ -1117,6 +1312,7 @@ function AddProductPageContent() {
         orderedImageUrls.unshift(featured);
       }
 
+      // Prepare media array - ONLY include general product images
       const media = orderedImageUrls
         .filter((url) => url.trim())
         .map((url, index) => ({
@@ -1127,7 +1323,8 @@ function AddProductPageContent() {
         }));
 
       // Prepare variants array
-      // Create variants for all combinations of colors and sizes with their respective stocks
+      // Create variants for all combinations of colors and their sizes
+      // Each color has its own sizes, images, price, and stock
       const variants: any[] = [];
       
       formData.variants.forEach((variant) => {
@@ -1140,43 +1337,28 @@ function AddProductPageContent() {
           baseVariantData.compareAtPrice = parseFloat(variant.compareAtPrice);
         }
 
-        if (variant.imageUrl) {
-          baseVariantData.imageUrl = variant.imageUrl;
+        // Получаем цвета из новой структуры ColorData
+        const colorDataArray = variant.colors || [];
+
+        if (colorDataArray.length === 0) {
+          console.error('❌ [ADMIN] Variant has no colors:', variant);
+          alert(`Variant ${formData.variants.indexOf(variant) + 1}: Please add at least one color`);
+          setLoading(false);
+          return;
         }
 
-        // Use colors from array if available, otherwise use simple color field
-        let colors = variant.colors && variant.colors.length > 0 ? variant.colors : [];
-        if (colors.length === 0 && variant.color && variant.color.trim() !== '') {
-          colors = [variant.color.trim()];
-        }
-        
-        // Use sizes from array if available, otherwise use simple size field
-        let sizes = variant.sizes && variant.sizes.length > 0 ? variant.sizes : [];
-        if (sizes.length === 0 && variant.size && variant.size.trim() !== '') {
-          sizes = [variant.size.trim()];
-        }
-        
-        const colorStocks = variant.colorStocks || {};
-        const sizeStocks = variant.sizeStocks || {};
+        // Process each color
+        colorDataArray.forEach((colorData, colorIndex) => {
+          const colorSizes = colorData.sizes || [];
+          const colorSizeStocks = colorData.sizeStocks || {};
 
-        // If we have both colors and sizes, create variants for all combinations
-        if (colors.length > 0 && sizes.length > 0) {
-          colors.forEach((color, colorIndex) => {
-            sizes.forEach((size, sizeIndex) => {
-              // For clothing, prioritize size stock; otherwise use color stock
-              // If both exist, use size stock for clothing, color stock for others
-              let stockForVariant = '0';
-              if (isClothingCategory() && sizeStocks[size]) {
-                stockForVariant = sizeStocks[size];
-              } else if (colorStocks[color]) {
-                stockForVariant = colorStocks[color];
-              } else if (sizeStocks[size]) {
-                stockForVariant = sizeStocks[size];
-              } else {
-                stockForVariant = variant.stock || '0';
-              }
+          // If color has sizes - create variants for each color-size combination
+          if (colorSizes.length > 0) {
+            colorSizes.forEach((size, sizeIndex) => {
+              // Use stock from sizeStocks for this color-size combination
+              const stockForVariant = colorSizeStocks[size] || colorData.stock || '0';
               
-              const skuSuffix = colors.length > 1 || sizes.length > 1 
+              const skuSuffix = colorDataArray.length > 1 || colorSizes.length > 1 
                 ? `-${colorIndex + 1}-${sizeIndex + 1}` 
                 : '';
               
@@ -1187,21 +1369,30 @@ function AddProductPageContent() {
                 finalSku = `${baseSlug.toUpperCase()}-${Date.now()}-${colorIndex + 1}-${sizeIndex + 1}`;
               }
               
+              // Сохраняем все изображения цвета через запятую в imageUrl
+              const variantImageUrl = colorData.images && colorData.images.length > 0 
+                ? colorData.images.join(',') 
+                : undefined;
+              
+              // Используем цену цвета, если указана, иначе цену варианта
+              const finalPrice = colorData.price && colorData.price.trim() !== '' 
+                ? parseFloat(colorData.price) 
+                : baseVariantData.price;
+              
               variants.push({
                 ...baseVariantData,
-                color: color,
+                price: finalPrice,
+                color: colorData.colorValue,
                 size: size,
                 stock: parseInt(stockForVariant) || 0,
                 sku: finalSku,
+                imageUrl: variantImageUrl,
               });
             });
-          });
-        } 
-        // If we have only colors
-        else if (colors.length > 0) {
-          colors.forEach((color, colorIndex) => {
-            const stockForColor = colorStocks[color] || variant.stock || '0';
-            const skuSuffix = colors.length > 1 ? `-${colorIndex + 1}` : '';
+          } 
+          // If color has no sizes - create variant with just color
+          else {
+            const skuSuffix = colorDataArray.length > 1 ? `-${colorIndex + 1}` : '';
             
             // Generate SKU if not provided
             let finalSku = variant.sku ? `${variant.sku.trim()}${skuSuffix}` : undefined;
@@ -1210,62 +1401,26 @@ function AddProductPageContent() {
               finalSku = `${baseSlug.toUpperCase()}-${Date.now()}-${colorIndex + 1}`;
             }
             
-            variants.push({
-              ...baseVariantData,
-              color: color,
-              stock: parseInt(stockForColor) || 0,
-              sku: finalSku,
-            });
-          });
-        }
-        // If we have only sizes (for clothing)
-        else if (sizes.length > 0) {
-          sizes.forEach((size, sizeIndex) => {
-            const stockForSize = sizeStocks[size] || variant.stock || '0';
-            const skuSuffix = sizes.length > 1 ? `-${sizeIndex + 1}` : '';
+            // Сохраняем все изображения цвета через запятую в imageUrl
+            const variantImageUrl = colorData.images && colorData.images.length > 0 
+              ? colorData.images.join(',') 
+              : undefined;
             
-            // Generate SKU if not provided
-            let finalSku = variant.sku ? `${variant.sku.trim()}${skuSuffix}` : undefined;
-            if (!finalSku || finalSku === '') {
-              const baseSlug = formData.slug || 'PROD';
-              finalSku = `${baseSlug.toUpperCase()}-${Date.now()}-${sizeIndex + 1}`;
-            }
+            // Используем цену цвета, если указана, иначе цену варианта
+            const finalPrice = colorData.price && colorData.price.trim() !== '' 
+              ? parseFloat(colorData.price) 
+              : baseVariantData.price;
             
             variants.push({
               ...baseVariantData,
-              size: size,
-              stock: parseInt(stockForSize) || 0,
+              price: finalPrice,
+              color: colorData.colorValue,
+              stock: parseInt(colorData.stock) || 0,
               sku: finalSku,
+              imageUrl: variantImageUrl,
             });
-          });
-        } 
-        // If no colors and no sizes, create single variant
-        else {
-          // Generate SKU if not provided
-          let finalSku = variant.sku ? variant.sku.trim() : undefined;
-          if (!finalSku || finalSku === '') {
-            const baseSlug = formData.slug || 'PROD';
-            finalSku = `${baseSlug.toUpperCase()}-${Date.now()}-1`;
           }
-          
-          const singleVariant: any = {
-            ...baseVariantData,
-            stock: parseInt(variant.stock) || 0,
-            sku: finalSku,
-          };
-          
-          // Add color if provided in simple text field
-          if (variant.color && variant.color.trim() !== '') {
-            singleVariant.color = variant.color.trim();
-          }
-          
-          // Add size if provided in simple text field
-          if (variant.size && variant.size.trim() !== '') {
-            singleVariant.size = variant.size.trim();
-          }
-          
-          variants.push(singleVariant);
-        }
+        });
       });
 
       // Final validation - ensure all SKUs are unique
@@ -1305,6 +1460,19 @@ function AddProductPageContent() {
       } else {
         console.log('ℹ️ [VALIDATION] Size validation skipped (category does not require sizes)');
       }
+      
+      // Final validation - ensure all variants have at least one color
+      const hasColorInFinalVariants = variants.some(
+        (variant) => variant.color && variant.color.trim() !== ""
+      );
+      
+      if (!hasColorInFinalVariants) {
+        console.error('❌ [VALIDATION] Final color validation failed. Variants:', variants);
+        alert('At least one color is required for product variants');
+        setLoading(false);
+        return;
+      }
+      console.log('✅ [VALIDATION] Final color validation passed');
 
       // Prepare payload
       const payload: any = {
@@ -1707,7 +1875,7 @@ function AddProductPageContent() {
                               <>
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={url}
+                                  src={processImageUrl(url)}
                                   alt={`Preview ${index + 1}`}
                                   className="h-full w-full object-cover"
                                   onError={(e) => {
@@ -1930,7 +2098,43 @@ function AddProductPageContent() {
                         </Button>
                       </div>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        {/* Price - общая цена для всех цветов */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Price * (for all colors)
+                          </label>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            value={variant.price}
+                            onChange={(e) => {
+                              let value = e.target.value;
+                              value = value.replace(/[^\d.]/g, '');
+                              const parts = value.split('.');
+                              if (parts.length > 2) {
+                                value = parts[0] + '.' + parts.slice(1).join('');
+                              }
+                              if (parts.length === 2 && parts[1].length > 2) {
+                                value = parts[0] + '.' + parts[1].substring(0, 2);
+                              }
+                              updateVariant(variant.id, 'price', value);
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value.trim();
+                              if (value && !isNaN(parseFloat(value))) {
+                                const numValue = parseFloat(value);
+                                if (numValue > 0) {
+                                  updateVariant(variant.id, 'price', numValue.toFixed(2));
+                                }
+                              }
+                            }}
+                            placeholder="0.00"
+                            required
+                            className="w-full"
+                          />
+                        </div>
+
                         {/* Compare At Price */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1966,22 +2170,6 @@ function AddProductPageContent() {
                           />
                         </div>
 
-                        {/* Stock - Only show if no colors selected or single color */}
-                        {(variant.colors || []).length <= 1 && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Stock *
-                            </label>
-                            <Input
-                              type="number"
-                              value={variant.stock}
-                              onChange={(e) => updateVariant(variant.id, 'stock', e.target.value)}
-                              required
-                              placeholder="0"
-                              className="w-full"
-                            />
-                          </div>
-                        )}
 
                         {/* SKU */}
                         <div>
@@ -2016,16 +2204,16 @@ function AddProductPageContent() {
                           <p className="mt-1 text-xs text-gray-500">SKU-ն պետք է եզակի լինի ամեն վարիանտի համար</p>
                         </div>
 
-                        {/* Color - Multiple selection with stock per color */}
+                        {/* Colors - Unified selection with images and stock per color */}
                         <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 mb-3">
-                            <strong>Colors</strong>
+                            <strong>Colors *</strong>
                           </label>
                           
-                          {/* Add new color section - at the top */}
+                          {/* Add new color manually */}
                           <div className="mb-4 p-4 bg-gray-50 rounded-md border border-gray-200">
                             <p className="text-sm font-medium text-gray-700 mb-3">
-                              Add New Color:
+                              Add New Color (Manual):
                             </p>
                             <NewColorSizeInput
                               variantId={variant.id}
@@ -2035,20 +2223,20 @@ function AddProductPageContent() {
                             />
                           </div>
                           
-                          {/* Checkbox list for selecting colors - all available colors */}
-                          <div className="space-y-3 mb-4">
-                            <p className="text-sm font-medium text-gray-700 mb-2">Select Colors (checkboxes):</p>
+                          {/* Color Palette - Checkbox selection */}
+                          <div className="space-y-3 mb-6">
+                            <p className="text-sm font-medium text-gray-700 mb-2">Select Colors (Color Palette):</p>
                             
                             {/* Colors from attributes */}
                             {getColorAttribute() && getColorAttribute()!.values.length > 0 && (
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
+                              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
                                 {getColorAttribute()?.values.map((val) => {
-                                  const isSelected = (variant.colors || []).includes(val.value);
+                                  const isSelected = variant.colors.some((c) => c.colorValue === val.value);
                                   const colorHex = getColorHex(val.label);
                                   return (
                                     <label
                                       key={val.id}
-                                      className={`flex items-center space-x-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
+                                      className={`flex flex-col items-center justify-center cursor-pointer p-3 rounded-lg border-2 transition-all ${
                                         isSelected 
                                           ? 'bg-gray-100 border-gray-500 shadow-sm' 
                                           : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
@@ -2057,19 +2245,17 @@ function AddProductPageContent() {
                                       <input
                                         type="checkbox"
                                         checked={isSelected}
-                                        onChange={() => toggleVariantColor(variant.id, val.value)}
-                                        className="w-5 h-5 text-gray-600 border-gray-300 rounded focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
+                                        onChange={() => toggleVariantColor(variant.id, val.value, val.label)}
+                                        className="sr-only"
                                       />
-                                      <span className="flex items-center gap-2">
-                                        <span
-                                          className="inline-block w-4 h-4 rounded-full border border-gray-300"
-                                          style={{ backgroundColor: colorHex }}
-                                        />
-                                        <span className={`text-sm font-medium ${
-                                          isSelected ? 'text-gray-900' : 'text-gray-700'
-                                        }`}>
-                                          {val.label}
-                                        </span>
+                                      <span
+                                        className="inline-block w-8 h-8 rounded-full border-2 border-gray-300 mb-2 shadow-sm"
+                                        style={{ backgroundColor: colorHex }}
+                                      />
+                                      <span className={`text-xs font-medium text-center ${
+                                        isSelected ? 'text-gray-900' : 'text-gray-700'
+                                      }`}>
+                                        {val.label}
                                       </span>
                                     </label>
                                   );
@@ -2078,27 +2264,24 @@ function AddProductPageContent() {
                             )}
                             
                             {/* Manually added colors */}
-                            {(variant.colors || []).length > 0 && (() => {
-                              const manuallyAddedColors = (variant.colors || []).filter(colorValue => {
+                            {variant.colors.length > 0 && (() => {
+                              const manuallyAddedColors = variant.colors.filter(colorData => {
                                 const colorAttribute = getColorAttribute();
                                 if (!colorAttribute) return true;
-                                return !colorAttribute.values.some(v => v.value === colorValue);
+                                return !colorAttribute.values.some(v => v.value === colorData.colorValue);
                               });
                               
                               if (manuallyAddedColors.length > 0) {
                                 return (
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
-                                    {manuallyAddedColors.map((colorValue) => {
-                                      const isSelected = (variant.colors || []).includes(colorValue);
-                                      const savedLabel = variant.colorLabels?.[colorValue];
-                                      const colorLabel = savedLabel || 
-                                        (colorValue.charAt(0).toUpperCase() + colorValue.slice(1).replace(/-/g, ' '));
-                                      const colorHex = getColorHex(colorLabel);
+                                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
+                                    {manuallyAddedColors.map((colorData) => {
+                                      const isSelected = variant.colors.some((c) => c.colorValue === colorData.colorValue);
+                                      const colorHex = getColorHex(colorData.colorLabel);
                                       
                                       return (
                                         <label
-                                          key={colorValue}
-                                          className={`flex items-center space-x-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
+                                          key={colorData.colorValue}
+                                          className={`flex flex-col items-center justify-center cursor-pointer p-3 rounded-lg border-2 transition-all ${
                                             isSelected 
                                               ? 'bg-gray-100 border-gray-500 shadow-sm' 
                                               : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
@@ -2107,19 +2290,17 @@ function AddProductPageContent() {
                                           <input
                                             type="checkbox"
                                             checked={isSelected}
-                                            onChange={() => toggleVariantColor(variant.id, colorValue)}
-                                            className="w-5 h-5 text-gray-600 border-gray-300 rounded focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
+                                            onChange={() => toggleVariantColor(variant.id, colorData.colorValue, colorData.colorLabel)}
+                                            className="sr-only"
                                           />
-                                          <span className="flex items-center gap-2">
-                                            <span
-                                              className="inline-block w-4 h-4 rounded-full border border-gray-300"
-                                              style={{ backgroundColor: colorHex }}
-                                            />
-                                            <span className={`text-sm font-medium ${
-                                              isSelected ? 'text-gray-900' : 'text-gray-700'
-                                            }`}>
-                                              {colorLabel}
-                                            </span>
+                                          <span
+                                            className="inline-block w-8 h-8 rounded-full border-2 border-gray-300 mb-2 shadow-sm"
+                                            style={{ backgroundColor: colorHex }}
+                                          />
+                                          <span className={`text-xs font-medium text-center ${
+                                            isSelected ? 'text-gray-900' : 'text-gray-700'
+                                          }`}>
+                                            {colorData.colorLabel}
                                           </span>
                                         </label>
                                       );
@@ -2132,56 +2313,325 @@ function AddProductPageContent() {
                             
                             {/* Show message if no colors available */}
                             {(!getColorAttribute() || getColorAttribute()!.values.length === 0) && 
-                             (variant.colors || []).length === 0 && (
+                             variant.colors.length === 0 && (
                               <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center text-gray-500 text-sm">
                                 No colors available. Add a new color above.
                               </div>
                             )}
                           </div>
                           
-                          {/* Stock inputs for each selected color */}
-                          {(variant.colors || []).length > 0 && (
-                            <div className="mt-4 space-y-3 p-4 bg-gray-50 rounded-md border border-gray-200">
-                              <p className="text-sm font-medium text-gray-700 mb-3">
-                                Stock for each color:
+                          {/* Selected Colors with Images and Stock */}
+                          {variant.colors.length > 0 && (
+                            <div className="space-y-4 mt-6">
+                              <p className="text-sm font-semibold text-gray-900 mb-3">
+                                Configure each color (Images, Stock, Price, Sizes):
                               </p>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {(variant.colors || []).map((colorValue) => {
-                                  const colorFromAttribute = getColorAttribute()?.values.find(
-                                    (v) => v.value === colorValue
-                                  );
-                                  const savedLabel = variant.colorLabels?.[colorValue];
-                                  const colorLabel = colorFromAttribute?.label || 
-                                    savedLabel || 
-                                    (colorValue.charAt(0).toUpperCase() + colorValue.slice(1).replace(/-/g, ' '));
-                                  const stockValue = (variant.colorStocks || {})[colorValue] !== undefined && (variant.colorStocks || {})[colorValue] !== null
-                                    ? String((variant.colorStocks || {})[colorValue])
-                                    : '';
-                                  
-                                  return (
-                                    <div key={colorValue} className="flex items-center gap-2">
-                                      <label className="text-sm text-gray-700 min-w-[100px] font-medium">
-                                        {colorLabel}:
-                                      </label>
-                                      <Input
-                                        type="number"
-                                        value={stockValue}
-                                        onChange={(e) => updateColorStock(variant.id, colorValue, e.target.value)}
-                                        placeholder="0"
-                                        required
-                                        className="flex-1"
-                                        min="0"
-                                      />
+                              
+                              {variant.colors.map((colorData, colorIndex) => {
+                                const colorHex = getColorHex(colorData.colorLabel);
+                                
+                                return (
+                                  <div key={colorData.colorValue} className="border-2 border-gray-300 rounded-lg p-4 bg-white">
+                                    <div className="flex items-center justify-between mb-4">
+                                      <div className="flex items-center gap-3">
+                                        <span
+                                          className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm"
+                                          style={{ backgroundColor: colorHex }}
+                                        />
+                                        <h4 className="text-base font-semibold text-gray-900">
+                                          {colorData.colorLabel}
+                                        </h4>
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => toggleVariantColor(variant.id, colorData.colorValue, colorData.colorLabel)}
+                                        className="text-red-600 hover:text-red-700 text-xs"
+                                      >
+                                        Remove
+                                      </Button>
                                     </div>
-                                  );
-                                })}
-                              </div>
+                                    
+                                    <div className="space-y-4">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Images for this color */}
+                                        <div>
+                                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Images for {colorData.colorLabel} *
+                                          </label>
+                                          
+                                          {/* Image Upload */}
+                                          <div className="mb-3">
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => {
+                                                setColorImageTarget({ variantId: variant.id, colorValue: colorData.colorValue });
+                                                colorImageFileInputRef.current?.click();
+                                              }}
+                                              disabled={imageUploadLoading}
+                                              className="w-full text-xs"
+                                            >
+                                              {imageUploadLoading && colorImageTarget?.colorValue === colorData.colorValue
+                                                ? 'Uploading...'
+                                                : '+ Upload Images'}
+                                            </Button>
+                                          </div>
+                                          
+                                          {/* Display uploaded images */}
+                                          {colorData.images.length > 0 && (
+                                            <div className="grid grid-cols-3 gap-2 mt-3">
+                                              {colorData.images.map((imageUrl, imgIndex) => (
+                                                <div key={imgIndex} className="relative group">
+                                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                  <img
+                                                    src={processImageUrl(imageUrl)}
+                                                    alt={`${colorData.colorLabel} ${imgIndex + 1}`}
+                                                    className="w-full h-20 object-cover rounded border border-gray-300"
+                                                    onError={(e) => {
+                                                      const target = e.target as HTMLImageElement;
+                                                      target.style.display = 'none';
+                                                      // Show a placeholder or error label if needed
+                                                      const parent = target.parentElement;
+                                                      if (parent) {
+                                                        const errorDiv = document.createElement('div');
+                                                        errorDiv.className = 'w-full h-full flex items-center justify-center bg-gray-100 text-[10px] text-red-500 text-center p-1';
+                                                        errorDiv.innerText = 'Broken Image';
+                                                        parent.appendChild(errorDiv);
+                                                      }
+                                                    }}
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => removeColorImage(variant.id, colorData.colorValue, imgIndex)}
+                                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    title="Remove image"
+                                                  >
+                                                    ×
+                                                  </button>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                          
+                                          {colorData.images.length === 0 && (
+                                            <p className="text-xs text-gray-500 mt-2">
+                                              No images uploaded yet. Click "Upload Images" to add.
+                                            </p>
+                                          )}
+                                        </div>
+                                        
+                                        {/* Stock for this color (if no sizes) */}
+                                        {(!isClothingCategory() || (colorData.sizes || []).length === 0) && (
+                                          <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                              Stock for {colorData.colorLabel} *
+                                            </label>
+                                            <Input
+                                              type="number"
+                                              value={colorData.stock}
+                                              onChange={(e) => updateColorStock(variant.id, colorData.colorValue, e.target.value)}
+                                              placeholder="0"
+                                              required
+                                              className="w-full"
+                                              min="0"
+                                            />
+                                          </div>
+                                        )}
+                                        
+                                        {/* Price for this color (optional) */}
+                                        <div>
+                                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Price for {colorData.colorLabel} (optional)
+                                          </label>
+                                          <Input
+                                            type="number"
+                                            value={colorData.price || ''}
+                                            onChange={(e) => updateColorPrice(variant.id, colorData.colorValue, e.target.value)}
+                                            placeholder={variant.price || "0.00"}
+                                            className="w-full"
+                                            min="0"
+                                            step="0.01"
+                                          />
+                                          <p className="text-xs text-gray-500 mt-1">
+                                            Leave empty to use variant price ({variant.price || '0.00'})
+                                          </p>
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Sizes for this color - only if category requires sizes */}
+                                      {isClothingCategory() && (
+                                        <div className="mt-4 pt-4 border-t border-gray-200">
+                                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                                            <strong>Sizes for {colorData.colorLabel} {isClothingCategory() ? '*' : ''}</strong>
+                                          </label>
+                                          
+                                          {/* Add new size section */}
+                                          <div className="mb-4 p-3 bg-gray-50 rounded-md border border-gray-200">
+                                            <p className="text-sm font-medium text-gray-700 mb-2">
+                                              Add New Size:
+                                            </p>
+                                            <NewColorSizeInput
+                                              variantId={variant.id}
+                                              type="size"
+                                              onAdd={(name) => addNewSizeToColor(variant.id, colorData.colorValue, name)}
+                                              placeholder="Enter size name (e.g. S, M, L, XL)"
+                                            />
+                                          </div>
+                                          
+                                          {/* Checkbox list for selecting sizes */}
+                                          <div className="space-y-3 mb-4">
+                                            <p className="text-sm font-medium text-gray-700 mb-2">Select Sizes (checkboxes):</p>
+                                            
+                                            {/* Sizes from attributes */}
+                                            {getSizeAttribute() && getSizeAttribute()!.values.length > 0 && (
+                                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
+                                                {getSizeAttribute()?.values.map((val) => {
+                                                  const isSelected = (colorData.sizes || []).includes(val.value);
+                                                  return (
+                                                    <label
+                                                      key={val.id}
+                                                      className={`flex items-center space-x-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
+                                                        isSelected 
+                                                          ? 'bg-gray-100 border-gray-500 shadow-sm' 
+                                                          : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                                                      }`}
+                                                    >
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => toggleColorSize(variant.id, colorData.colorValue, val.value)}
+                                                        className="w-5 h-5 text-gray-600 border-gray-300 rounded focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
+                                                      />
+                                                      <span className={`text-sm font-medium ${
+                                                        isSelected ? 'text-gray-900' : 'text-gray-700'
+                                                      }`}>
+                                                        {val.label}
+                                                      </span>
+                                                    </label>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                            
+                                            {/* Manually added sizes */}
+                                            {(colorData.sizes || []).length > 0 && (() => {
+                                              const manuallyAddedSizes = (colorData.sizes || []).filter(sizeValue => {
+                                                const sizeAttribute = getSizeAttribute();
+                                                if (!sizeAttribute) return true;
+                                                return !sizeAttribute.values.some(v => v.value === sizeValue);
+                                              });
+                                              
+                                              if (manuallyAddedSizes.length > 0) {
+                                                return (
+                                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
+                                                    {manuallyAddedSizes.map((sizeValue) => {
+                                                      const isSelected = (colorData.sizes || []).includes(sizeValue);
+                                                      const savedLabel = colorData.sizeLabels?.[sizeValue];
+                                                      const sizeLabel = savedLabel || 
+                                                        sizeValue.toUpperCase().replace(/-/g, ' ');
+                                                      
+                                                      return (
+                                                        <label
+                                                          key={sizeValue}
+                                                          className={`flex items-center space-x-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
+                                                            isSelected 
+                                                              ? 'bg-gray-100 border-gray-500 shadow-sm' 
+                                                              : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                                                          }`}
+                                                        >
+                                                          <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => toggleColorSize(variant.id, colorData.colorValue, sizeValue)}
+                                                            className="w-5 h-5 text-gray-600 border-gray-300 rounded focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
+                                                          />
+                                                          <span className={`text-sm font-medium ${
+                                                            isSelected ? 'text-gray-900' : 'text-gray-700'
+                                                          }`}>
+                                                            {sizeLabel}
+                                                          </span>
+                                                        </label>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                );
+                                              }
+                                              return null;
+                                            })()}
+                                            
+                                            {/* Show message if no sizes available */}
+                                            {(!getSizeAttribute() || getSizeAttribute()!.values.length === 0) && 
+                                             (colorData.sizes || []).length === 0 && (
+                                              <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center text-gray-500 text-sm">
+                                                {isClothingCategory() 
+                                                  ? 'No sizes available. Add a new size above.' 
+                                                  : 'No sizes available.'}
+                                              </div>
+                                            )}
+                                          </div>
+                                          
+                                          {/* Stock inputs for each selected size */}
+                                          {(colorData.sizes || []).length > 0 && (
+                                            <div className="mt-4 space-y-3 p-4 bg-gray-50 rounded-md border border-gray-200">
+                                              <p className="text-sm font-medium text-gray-700 mb-3">
+                                                Stock for each size:
+                                              </p>
+                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {(colorData.sizes || []).map((sizeValue) => {
+                                                  const sizeFromAttribute = getSizeAttribute()?.values.find(
+                                                    (v) => v.value === sizeValue
+                                                  );
+                                                  const savedLabel = colorData.sizeLabels?.[sizeValue];
+                                                  const sizeLabel = sizeFromAttribute?.label || 
+                                                    savedLabel || 
+                                                    sizeValue.toUpperCase().replace(/-/g, ' ');
+                                                  const stockValue = (colorData.sizeStocks || {})[sizeValue] !== undefined && (colorData.sizeStocks || {})[sizeValue] !== null
+                                                    ? String((colorData.sizeStocks || {})[sizeValue])
+                                                    : '';
+                                                  
+                                                  return (
+                                                    <div key={sizeValue} className="flex items-center gap-2">
+                                                      <label className="text-sm text-gray-700 min-w-[80px] font-medium">
+                                                        {sizeLabel}:
+                                                      </label>
+                                                      <Input
+                                                        type="number"
+                                                        value={stockValue}
+                                                        onChange={(e) => updateColorSizeStock(variant.id, colorData.colorValue, sizeValue, e.target.value)}
+                                                        placeholder="0"
+                                                        required
+                                                        className="flex-1"
+                                                        min="0"
+                                                      />
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          )}
+                                          
+                                          {/* Validation message */}
+                                          {isClothingCategory() && 
+                                           (colorData.sizes || []).length === 0 && (
+                                            <p className="mt-2 text-sm text-red-600">
+                                              At least one size is required for this category
+                                            </p>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                           
                           {/* Option to add to global attributes */}
                           {getColorAttribute() && (
-                            <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+                            <div className="mt-4 p-3 bg-gray-50 rounded-md border border-gray-200">
                               <p className="text-xs text-gray-600 mb-2">
                                 Or add color to global attributes (for all products):
                               </p>
@@ -2222,245 +2672,6 @@ function AddProductPageContent() {
                           )}
                         </div>
 
-                        {/* Size - Multiple selection with stock per size */}
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
-                            <strong>Sizes {isClothingCategory() ? '*' : ''}</strong>
-                          </label>
-                          
-                          {/* Add new size section - at the top */}
-                          {isClothingCategory() && (
-                            <div className="mb-4 p-4 bg-gray-50 rounded-md border border-gray-200">
-                              <p className="text-sm font-medium text-gray-700 mb-3">
-                                Add New Size:
-                              </p>
-                              <NewColorSizeInput
-                                variantId={variant.id}
-                                type="size"
-                                onAdd={(name) => addNewSizeToVariant(variant.id, name)}
-                                placeholder="Enter size name (e.g. S, M, L, XL)"
-                              />
-                            </div>
-                          )}
-                          
-                          {/* Checkbox list for selecting sizes - all available sizes */}
-                          <div className="space-y-3 mb-4">
-                            <p className="text-sm font-medium text-gray-700 mb-2">Select Sizes (checkboxes):</p>
-                            
-                            {/* Sizes from attributes */}
-                            {getSizeAttribute() && getSizeAttribute()!.values.length > 0 && (
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
-                                {getSizeAttribute()?.values.map((val) => {
-                                  const isSelected = (variant.sizes || []).includes(val.value);
-                                  return (
-                                    <label
-                                      key={val.id}
-                                      className={`flex items-center space-x-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
-                                        isSelected 
-                                          ? 'bg-gray-100 border-gray-500 shadow-sm' 
-                                          : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
-                                      }`}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isSelected}
-                                        onChange={() => toggleVariantSize(variant.id, val.value)}
-                                        className="w-5 h-5 text-gray-600 border-gray-300 rounded focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
-                                      />
-                                      <span className={`text-sm font-medium ${
-                                        isSelected ? 'text-gray-900' : 'text-gray-700'
-                                      }`}>
-                                        {val.label}
-                                      </span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            
-                            {/* Manually added sizes */}
-                            {(variant.sizes || []).length > 0 && (() => {
-                              const manuallyAddedSizes = (variant.sizes || []).filter(sizeValue => {
-                                const sizeAttribute = getSizeAttribute();
-                                if (!sizeAttribute) return true;
-                                return !sizeAttribute.values.some(v => v.value === sizeValue);
-                              });
-                              
-                              if (manuallyAddedSizes.length > 0) {
-                                return (
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto shadow-sm">
-                                    {manuallyAddedSizes.map((sizeValue) => {
-                                      const isSelected = (variant.sizes || []).includes(sizeValue);
-                                      const savedLabel = variant.sizeLabels?.[sizeValue];
-                                      const sizeLabel = savedLabel || 
-                                        sizeValue.toUpperCase().replace(/-/g, ' ');
-                                      
-                                      return (
-                                        <label
-                                          key={sizeValue}
-                                          className={`flex items-center space-x-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
-                                            isSelected 
-                                              ? 'bg-gray-100 border-gray-500 shadow-sm' 
-                                              : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
-                                          }`}
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={isSelected}
-                                            onChange={() => toggleVariantSize(variant.id, sizeValue)}
-                                            className="w-5 h-5 text-gray-600 border-gray-300 rounded focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
-                                          />
-                                          <span className={`text-sm font-medium ${
-                                            isSelected ? 'text-gray-900' : 'text-gray-700'
-                                          }`}>
-                                            {sizeLabel}
-                                          </span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()}
-                            
-                            {/* Show message if no sizes available */}
-                            {(!getSizeAttribute() || getSizeAttribute()!.values.length === 0) && 
-                             (variant.sizes || []).length === 0 && (
-                              <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center text-gray-500 text-sm">
-                                {isClothingCategory() 
-                                  ? 'No sizes available. Add a new size above.' 
-                                  : 'No sizes available.'}
-                              </div>
-                            )}
-                          </div>
-                          
-                          {/* Stock inputs for each selected size */}
-                          {(variant.sizes || []).length > 0 && (
-                            <div className="mt-4 space-y-3 p-4 bg-gray-50 rounded-md border border-gray-200">
-                              <p className="text-sm font-medium text-gray-700 mb-3">
-                                Stock for each size:
-                              </p>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {(variant.sizes || []).map((sizeValue) => {
-                                  const sizeFromAttribute = getSizeAttribute()?.values.find(
-                                    (v) => v.value === sizeValue
-                                  );
-                                  const savedLabel = variant.sizeLabels?.[sizeValue];
-                                  const sizeLabel = sizeFromAttribute?.label || 
-                                    savedLabel || 
-                                    sizeValue.toUpperCase().replace(/-/g, ' ');
-                                  const stockValue = (variant.sizeStocks || {})[sizeValue] !== undefined && (variant.sizeStocks || {})[sizeValue] !== null
-                                    ? String((variant.sizeStocks || {})[sizeValue])
-                                    : '';
-                                  
-                                  return (
-                                    <div key={sizeValue} className="flex items-center gap-2">
-                                      <label className="text-sm text-gray-700 min-w-[80px] font-medium">
-                                        {sizeLabel}:
-                                      </label>
-                                      <Input
-                                        type="number"
-                                        value={stockValue}
-                                        onChange={(e) => updateSizeStock(variant.id, sizeValue, e.target.value)}
-                                        placeholder="0"
-                                        required
-                                        className="flex-1"
-                                        min="0"
-                                      />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Option to add to global attributes */}
-                          {getSizeAttribute() && (
-                            <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
-                              <p className="text-xs text-gray-600 mb-2">
-                                Or add size to global attributes (for all products):
-                              </p>
-                              <div className="flex items-center gap-2">
-                                <Input
-                                  type="text"
-                                  value={newSizeName}
-                                  onChange={(e) => setNewSizeName(e.target.value)}
-                                  placeholder="Enter size name"
-                                  className="flex-1"
-                                  onKeyPress={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      handleAddSize();
-                                    }
-                                  }}
-                                />
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={handleAddSize}
-                                  disabled={addingSize || !newSizeName.trim()}
-                                  className="whitespace-nowrap text-xs"
-                                >
-                                  {addingSize ? 'Adding...' : '+ Add to Attributes'}
-                                </Button>
-                              </div>
-                              {sizeMessage && (
-                                <div className={`mt-2 text-xs px-2 py-1 rounded ${
-                                  sizeMessage.type === 'success' 
-                                    ? 'bg-green-50 text-green-700 border border-green-200' 
-                                    : 'bg-red-50 text-red-700 border border-red-200'
-                                }`}>
-                                  {sizeMessage.text}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          
-                          {/* Validation message */}
-                          {isClothingCategory() && 
-                           !getSizeAttribute() && 
-                           !variant.size && 
-                           (variant.sizes || []).length === 0 && (
-                            <p className="mt-2 text-sm text-red-600">
-                              At least one size is required for this category
-                            </p>
-                          )}
-                          {isClothingCategory() && 
-                           getSizeAttribute() && 
-                           (variant.sizes || []).length === 0 && (
-                            <p className="mt-2 text-sm text-red-600">
-                              At least one size is required for this category
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Variant Image URL / Upload */}
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Variant Image (optional)
-                          </label>
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <Input
-                              type="url"
-                              value={variant.imageUrl}
-                              onChange={(e) => updateVariant(variant.id, 'imageUrl', e.target.value)}
-                              placeholder="https://example.com/variant-image.jpg"
-                              className="w-full sm:flex-1"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="w-full sm:w-auto text-xs"
-                              onClick={() => {
-                                setVariantImageTargetId(variant.id);
-                                variantImageFileInputRef.current?.click();
-                              }}
-                            >
-                              Upload Image
-                            </Button>
-                          </div>
-                        </div>
                       </div>
                     </div>
                   ))}
@@ -2514,13 +2725,14 @@ function AddProductPageContent() {
                 Cancel
               </Button>
             </div>
-            {/* Hidden input for variant image uploads */}
+            {/* Hidden input for color image uploads */}
             <input
-              ref={variantImageFileInputRef}
+              ref={colorImageFileInputRef}
               type="file"
               accept="image/*"
+              multiple
               className="hidden"
-              onChange={handleUploadVariantImage}
+              onChange={handleUploadColorImages}
             />
           </form>
         </Card>

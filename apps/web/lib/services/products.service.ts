@@ -988,7 +988,7 @@ class ProductsService {
       })) : [],
       variants: Array.isArray(product.variants) ? product.variants
         .sort((a: { price: number }, b: { price: number }) => a.price - b.price)
-        .map((variant: { id: string; sku: string | null; price: number; compareAtPrice: number | null; stock: number; options?: Array<{ attributeKey?: string | null; value?: string | null }> }) => {
+        .map((variant: { id: string; sku: string | null; price: number; compareAtPrice: number | null; stock: number; imageUrl?: string | null; options?: Array<{ attributeKey?: string | null; value?: string | null }> }) => {
           const originalPrice = variant.price;
           let finalPrice = originalPrice;
           let discountPrice = null;
@@ -1007,6 +1007,7 @@ class ProductsService {
             globalDiscount: globalDiscount > 0 ? globalDiscount : null,
             productDiscount: productDiscount > 0 ? productDiscount : null,
             stock: variant.stock,
+            imageUrl: variant.imageUrl || null,
             options: Array.isArray(variant.options) ? variant.options.map((opt: { attributeKey?: string | null; value?: string | null }) => ({
               attribute: opt.attributeKey || "",
               value: opt.value || "",
