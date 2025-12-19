@@ -25,7 +25,7 @@ interface ProductsGridProps {
 }
 
 export function ProductsGrid({ products, sortBy = 'default' }: ProductsGridProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('grid-3');
+  const [viewMode, setViewMode] = useState<ViewMode>('grid-2');
   const [sortedProducts, setSortedProducts] = useState<Product[]>(products);
 
   // Load view mode from localStorage
@@ -33,6 +33,10 @@ export function ProductsGrid({ products, sortBy = 'default' }: ProductsGridProps
     const stored = localStorage.getItem('products-view-mode');
     if (stored && ['list', 'grid-2', 'grid-3'].includes(stored)) {
       setViewMode(stored as ViewMode);
+    } else {
+      // Default to grid-2 if nothing stored
+      setViewMode('grid-2');
+      localStorage.setItem('products-view-mode', 'grid-2');
     }
   }, []);
 
