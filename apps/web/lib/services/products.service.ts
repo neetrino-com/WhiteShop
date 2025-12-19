@@ -1,6 +1,7 @@
 import { db } from "@white-shop/db";
 import { Prisma } from "@prisma/client";
 import { adminService } from "./admin.service";
+import { translations } from "../translations";
 
 interface ProductFilters {
   category?: string;
@@ -60,6 +61,15 @@ const normalizeFilterList = (
   }
 
   return items;
+};
+
+/**
+ * Get "Out of Stock" translation for a given language
+ */
+const getOutOfStockLabel = (lang: string = "en"): string => {
+  const langKey = lang as keyof typeof translations;
+  const translation = translations[langKey] || translations.en;
+  return translation.stock.outOfStock;
 };
 
 class ProductsService {
@@ -520,13 +530,50 @@ class ProductsService {
               : (product.media[0] as any).url
             : null,
         inStock: (variant?.stock || 0) > 0,
-        labels: Array.isArray(product.labels) ? product.labels.map((label: { id: string; type: string; value: string; position: string; color: string | null }) => ({
-          id: label.id,
-          type: label.type,
-          value: label.value,
-          position: label.position,
-          color: label.color,
-        })) : [],
+        labels: (() => {
+          // Map existing labels
+          const existingLabels = Array.isArray(product.labels) ? product.labels.map((label: { id: string; type: string; value: string; position: string; color: string | null }) => ({
+            id: label.id,
+            type: label.type,
+            value: label.value,
+            position: label.position,
+            color: label.color,
+          })) : [];
+          
+          // Check if product is out of stock
+          const isOutOfStock = (variant?.stock || 0) <= 0;
+          
+          // If out of stock, add "Out of Stock" label
+          if (isOutOfStock) {
+            // Check if "Out of Stock" label already exists
+            const outOfStockText = getOutOfStockLabel(lang);
+            const hasOutOfStockLabel = existingLabels.some(
+              (label) => label.value.toLowerCase() === outOfStockText.toLowerCase() ||
+                         label.value.toLowerCase().includes('out of stock') ||
+                         label.value.toLowerCase().includes('արտադրված') ||
+                         label.value.toLowerCase().includes('нет в наличии') ||
+                         label.value.toLowerCase().includes('არ არის მარაგში')
+            );
+            
+            if (!hasOutOfStockLabel) {
+              // Check if top-left position is available, otherwise use top-right
+              const topLeftOccupied = existingLabels.some((l) => l.position === 'top-left');
+              const position = topLeftOccupied ? 'top-right' : 'top-left';
+              
+              existingLabels.push({
+                id: `out-of-stock-${product.id}`,
+                type: 'text',
+                value: outOfStockText,
+                position: position as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right',
+                color: '#6B7280', // Gray color for out of stock
+              });
+              
+              console.log(`🏷️ [PRODUCTS SERVICE] Added "Out of Stock" label to product ${product.id} (${lang})`);
+            }
+          }
+          
+          return existingLabels;
+        })(),
         colors: availableColors, // Add available colors array
       };
     });
@@ -979,13 +1026,51 @@ class ProductsService {
         };
       }) : [],
       media: Array.isArray(product.media) ? product.media : [],
-      labels: Array.isArray(product.labels) ? product.labels.map((label: { id: string; type: string; value: string; position: string; color: string | null }) => ({
-        id: label.id,
-        type: label.type,
-        value: label.value,
-        position: label.position,
-        color: label.color,
-      })) : [],
+      labels: (() => {
+        // Map existing labels
+        const existingLabels = Array.isArray(product.labels) ? product.labels.map((label: { id: string; type: string; value: string; position: string; color: string | null }) => ({
+          id: label.id,
+          type: label.type,
+          value: label.value,
+          position: label.position,
+          color: label.color,
+        })) : [];
+        
+        // Check if all variants are out of stock
+        const variants = Array.isArray(product.variants) ? product.variants : [];
+        const isOutOfStock = variants.length === 0 || variants.every((v: { stock: number }) => (v.stock || 0) <= 0);
+        
+        // If out of stock, add "Out of Stock" label
+        if (isOutOfStock) {
+          // Check if "Out of Stock" label already exists
+          const outOfStockText = getOutOfStockLabel(lang);
+          const hasOutOfStockLabel = existingLabels.some(
+            (label) => label.value.toLowerCase() === outOfStockText.toLowerCase() ||
+                       label.value.toLowerCase().includes('out of stock') ||
+                       label.value.toLowerCase().includes('արտադրված') ||
+                       label.value.toLowerCase().includes('нет в наличии') ||
+                       label.value.toLowerCase().includes('არ არის მარაგში')
+          );
+          
+          if (!hasOutOfStockLabel) {
+            // Check if top-left position is available, otherwise use top-right
+            const topLeftOccupied = existingLabels.some((l) => l.position === 'top-left');
+            const position = topLeftOccupied ? 'top-right' : 'top-left';
+            
+            existingLabels.push({
+              id: `out-of-stock-${product.id}`,
+              type: 'text',
+              value: outOfStockText,
+              position: position as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right',
+              color: '#6B7280', // Gray color for out of stock
+            });
+            
+            console.log(`🏷️ [PRODUCTS SERVICE] Added "Out of Stock" label to product ${product.id} (${lang})`);
+          }
+        }
+        
+        return existingLabels;
+      })(),
       variants: Array.isArray(product.variants) ? product.variants
         .sort((a: { price: number }, b: { price: number }) => a.price - b.price)
         .map((variant: { id: string; sku: string | null; price: number; compareAtPrice: number | null; stock: number; imageUrl?: string | null; options?: Array<{ attributeKey?: string | null; value?: string | null }> }) => {

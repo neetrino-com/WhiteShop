@@ -194,6 +194,7 @@
 - ✅ Fixed product variant selection logic: `findVariantByColorAndSize` now strictly follows user selection even if stock is 0, preventing accidental switch to a different size's stock limit
 - ✅ Updated product page UI: color and size buttons now display stock counts relevant to the current selection (e.g., size button shows stock for selected color) for better UX and clarity
 - ✅ Improved admin product add/edit: added a Quick Color Selection palette and enhanced the Color Palette UI with cards, icons, and better visual states to match reference design
+- ✅ Automatic "Out of Stock" label: when a product becomes out of stock, the system automatically displays an "Out of Stock" label on product cards and single product pages. The label appears in the appropriate language (en/hy/ru/ka) and uses a gray color (#6B7280) for clear visibility. The label is added dynamically in the products service layer (findAll and findBySlug methods) and avoids duplication if a similar label already exists.
 
 ## Ամփոփում
 
