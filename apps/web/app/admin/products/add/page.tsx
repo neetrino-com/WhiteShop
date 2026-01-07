@@ -94,6 +94,8 @@ interface ColorData {
   compareAtPrice?: string; // Старая цена для этого конкретного цвета (скидка)
   sizes: string[]; // Размеры для этого цвета
   sizeStocks: Record<string, string>; // Stock для каждого размера этого цвета: { "S": "10", "M": "5" }
+  sizePrices?: Record<string, string>; // Price для каждого размера этого цвета: { "S": "100", "M": "120" }
+  sizeCompareAtPrices?: Record<string, string>; // CompareAtPrice для каждого размера: { "S": "150", "M": "180" }
   sizeLabels?: Record<string, string>; // Original labels for manually added sizes: { "s": "S" }
   isFeatured?: boolean; // Является ли этот цвет основным для товара
 }
@@ -1566,14 +1568,21 @@ function AddProductPageContent() {
                 ? colorData.images.join(',') 
                 : undefined;
               
-              // Используем цену цвета, если указана, иначе цену варианта
-              const finalPrice = colorData.price && colorData.price.trim() !== '' 
-                ? parseFloat(colorData.price) 
-                : baseVariantData.price;
+              // Используем цену размера, если указана, иначе цену цвета, иначе цену варианта
+              const sizePrice = colorData.sizePrices?.[size];
+              const finalPrice = sizePrice && sizePrice.trim() !== ''
+                ? parseFloat(sizePrice)
+                : (colorData.price && colorData.price.trim() !== '' 
+                  ? parseFloat(colorData.price) 
+                  : baseVariantData.price);
               
-              const finalCompareAtPrice = colorData.compareAtPrice && colorData.compareAtPrice.trim() !== ''
-                ? parseFloat(colorData.compareAtPrice)
-                : baseVariantData.compareAtPrice;
+              // Используем compareAtPrice размера, если указана, иначе compareAtPrice цвета, иначе compareAtPrice варианта
+              const sizeCompareAtPrice = colorData.sizeCompareAtPrices?.[size];
+              const finalCompareAtPrice = sizeCompareAtPrice && sizeCompareAtPrice.trim() !== ''
+                ? parseFloat(sizeCompareAtPrice)
+                : (colorData.compareAtPrice && colorData.compareAtPrice.trim() !== ''
+                  ? parseFloat(colorData.compareAtPrice)
+                  : baseVariantData.compareAtPrice);
               
               variants.push({
                 ...baseVariantData,
@@ -3266,6 +3275,20 @@ function AddProductPageContent() {
                                   const matrixVariant = matrixVariants[key];
                                   if (matrixVariant) {
                                     variant.colors[0].sizeStocks![sizeValue] = matrixVariant.stock;
+                                    // Store price per size in sizePrices
+                                    if (!variant.colors[0].sizePrices) {
+                                      variant.colors[0].sizePrices = {};
+                                    }
+                                    if (matrixVariant.price) {
+                                      variant.colors[0].sizePrices![sizeValue] = matrixVariant.price;
+                                    }
+                                    // Store compareAtPrice per size in sizeCompareAtPrices
+                                    if (!variant.colors[0].sizeCompareAtPrices) {
+                                      variant.colors[0].sizeCompareAtPrices = {};
+                                    }
+                                    if (matrixVariant.compareAtPrice) {
+                                      variant.colors[0].sizeCompareAtPrices![sizeValue] = matrixVariant.compareAtPrice;
+                                    }
                                     // Store SKU per size in sizeLabels for later use
                                     if (!variant.colors[0].sizeLabels) {
                                       variant.colors[0].sizeLabels = {};
@@ -3323,12 +3346,26 @@ function AddProductPageContent() {
                                 variant.sku = firstSizeVariant.sku || '';
                               }
                               
-                              // Add size stocks and SKUs
+                              // Add size stocks, prices, and SKUs
                               matrixSelectedSizes.forEach((sizeValue) => {
                                 const key = sizeValue;
                                 const matrixVariant = matrixVariants[key]
                                 if (matrixVariant) {
                                   variant.colors[0].sizeStocks![sizeValue] = matrixVariant.stock;
+                                  // Store price per size in sizePrices
+                                  if (!variant.colors[0].sizePrices) {
+                                    variant.colors[0].sizePrices = {};
+                                  }
+                                  if (matrixVariant.price) {
+                                    variant.colors[0].sizePrices![sizeValue] = matrixVariant.price;
+                                  }
+                                  // Store compareAtPrice per size in sizeCompareAtPrices
+                                  if (!variant.colors[0].sizeCompareAtPrices) {
+                                    variant.colors[0].sizeCompareAtPrices = {};
+                                  }
+                                  if (matrixVariant.compareAtPrice) {
+                                    variant.colors[0].sizeCompareAtPrices![sizeValue] = matrixVariant.compareAtPrice;
+                                  }
                                   if (matrixVariant.sku) {
                                     variant.colors[0].sizeLabels![sizeValue] = matrixVariant.sku;
                                     // If variant.sku is empty, use first size's SKU

@@ -110,6 +110,7 @@ export default function ProductPage({ params }: ProductPageProps) {
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const [selectedAttributeValues, setSelectedAttributeValues] = useState<Map<string, string>>(new Map());
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [showMessage, setShowMessage] = useState<string | null>(null);
   const [thumbnailStartIndex, setThumbnailStartIndex] = useState(0);
@@ -389,6 +390,15 @@ export default function ProductPage({ params }: ProductPageProps) {
       const newVariant = findVariantByColorAndSize(selectedColor, selectedSize);
       
       if (newVariant && newVariant.id !== selectedVariant?.id) {
+        console.log('🔄 [PRODUCT PAGE] Variant changed:', {
+          from: selectedVariant?.id,
+          to: newVariant.id,
+          color: selectedColor,
+          size: selectedSize,
+          price: newVariant.price,
+          stock: newVariant.stock,
+          sku: newVariant.sku
+        });
         setSelectedVariant(newVariant);
         
         // Synchronize selection states with the found variant (supports both formats)
@@ -418,7 +428,7 @@ export default function ProductPage({ params }: ProductPageProps) {
     // New format: Use productAttributes
     product.productAttributes.forEach((productAttr) => {
       const attrKey = productAttr.attribute.key;
-      const valueMap = new Map<string, { valueId: string; value: string; label: string; variants: ProductVariant[] }>();
+      const valueMap = new Map<string, { valueId?: string; value: string; label: string; variants: ProductVariant[] }>();
 
       product.variants?.forEach((variant) => {
         const option = variant.options?.find((opt) => {
