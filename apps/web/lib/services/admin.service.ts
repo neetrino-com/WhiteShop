@@ -1,6 +1,7 @@
 import { db } from "@white-shop/db";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { findOrCreateAttributeValue } from "../utils/variant-generator";
+import { ensureProductAttributesTable } from "../utils/db-ensure";
 
 class AdminService {
   /**
@@ -1109,6 +1110,9 @@ class AdminService {
         // Create ProductAttribute relations if attributeIds provided
         if (data.attributeIds && data.attributeIds.length > 0) {
           try {
+            // Ensure table exists (for Vercel deployments where migrations might not run)
+            await ensureProductAttributesTable();
+            
             console.log('🔗 [ADMIN SERVICE] Creating ProductAttribute relations for product:', product.id, 'attributes:', data.attributeIds);
             await tx.productAttribute.createMany({
               data: data.attributeIds.map((attributeId) => ({
@@ -1280,6 +1284,9 @@ class AdminService {
 
         // 3.5. Update ProductAttribute relations
         if (data.attributeIds !== undefined) {
+          // Ensure table exists (for Vercel deployments where migrations might not run)
+          await ensureProductAttributesTable();
+          
           await tx.productAttribute.deleteMany({ where: { productId } });
           if (data.attributeIds.length > 0) {
             await tx.productAttribute.createMany({

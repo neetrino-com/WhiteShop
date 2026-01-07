@@ -6,6 +6,7 @@
     "dev": "next dev",
     "dev:webpack": "next dev --no-turbo",
     "dev:clean": "rm -rf .next && next dev",
+    "prebuild": "cd ../../packages/db && npm run db:generate",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
