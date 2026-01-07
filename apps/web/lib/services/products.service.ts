@@ -243,58 +243,82 @@ class ProductsService {
 
     // Get products
     console.log('🔍 [PRODUCTS SERVICE] Fetching products with where clause:', JSON.stringify(where, null, 2));
-    let products = await db.product.findMany({
-      where,
-      include: {
-        translations: true,
-        brand: {
-          include: {
-            translations: true,
-          },
+    
+    // Base include without productAttributes (for backward compatibility)
+    const baseInclude = {
+      translations: true,
+      brand: {
+        include: {
+          translations: true,
         },
-        variants: {
-          where: {
-            published: true,
-          },
-          include: {
-            options: {
-              include: {
-                attributeValue: {
-                  include: {
-                    attribute: true,
-                    translations: true,
-                  },
-                },
-              },
-            },
-          },
+      },
+      variants: {
+        where: {
+          published: true,
         },
-        labels: true,
-        categories: {
-          include: {
-            translations: true,
-          },
-        },
-        productAttributes: {
-          include: {
-            attribute: {
-              include: {
-                translations: true,
-                values: {
-                  include: {
-                    translations: true,
-                  },
+        include: {
+          options: {
+            include: {
+              attributeValue: {
+                include: {
+                  attribute: true,
+                  translations: true,
                 },
               },
             },
           },
         },
       },
-      skip,
-      take: limit * 10, // Get more to filter in memory
-    });
-    
-    console.log(`✅ [PRODUCTS SERVICE] Found ${products.length} products from database`);
+      labels: true,
+      categories: {
+        include: {
+          translations: true,
+        },
+      },
+    };
+
+    // Try to include productAttributes, but fallback if table doesn't exist
+    let products;
+    try {
+      products = await db.product.findMany({
+        where,
+        include: {
+          ...baseInclude,
+          productAttributes: {
+            include: {
+              attribute: {
+                include: {
+                  translations: true,
+                  values: {
+                    include: {
+                      translations: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        skip,
+        take: limit * 10, // Get more to filter in memory
+      });
+      console.log(`✅ [PRODUCTS SERVICE] Found ${products.length} products from database (with productAttributes)`);
+    } catch (error: any) {
+      // If productAttributes table doesn't exist, retry without it
+      if (error?.code === 'P2021' || error?.message?.includes('product_attributes') || error?.message?.includes('does not exist')) {
+        console.warn('⚠️ [PRODUCTS SERVICE] product_attributes table not found, fetching without it:', error.message);
+        products = await db.product.findMany({
+          where,
+          include: baseInclude,
+          skip,
+          take: limit * 10,
+        });
+        console.log(`✅ [PRODUCTS SERVICE] Found ${products.length} products from database (without productAttributes)`);
+      } else {
+        // Re-throw if it's a different error
+        throw error;
+      }
+    }
 
     // Filter by price, colors, sizes, brand in memory
     if (minPrice || maxPrice) {
@@ -958,63 +982,93 @@ class ProductsService {
    * Get product by slug
    */
   async findBySlug(slug: string, lang: string = "en") {
-    const product = await db.product.findFirst({
-      where: {
-        translations: {
-          some: {
-            slug,
-            locale: lang,
-          },
+    // Base include without productAttributes (for backward compatibility)
+    const baseInclude = {
+      translations: true,
+      brand: {
+        include: {
+          translations: true,
         },
-        published: true,
-        deletedAt: null,
       },
-      include: {
-        translations: true,
-        brand: {
-          include: {
-            translations: true,
+      categories: {
+        include: {
+          translations: true,
+        },
+      },
+      variants: {
+        where: {
+          published: true,
+        },
+        include: {
+          options: {
+            include: {
+              attributeValue: {
+                include: {
+                  attribute: true,
+                  translations: true,
+                },
+              },
+            },
           },
         },
-        categories: {
-          include: {
-            translations: true,
+      },
+      labels: true,
+    };
+
+    // Try to include productAttributes, but fallback if table doesn't exist
+    let product;
+    try {
+      product = await db.product.findFirst({
+        where: {
+          translations: {
+            some: {
+              slug,
+              locale: lang,
+            },
+          },
+          published: true,
+          deletedAt: null,
+        },
+        include: {
+          ...baseInclude,
+          productAttributes: {
+            include: {
+              attribute: {
+                include: {
+                  translations: true,
+                  values: {
+                    include: {
+                      translations: true,
+                    },
+                  },
+                },
+              },
+            },
           },
         },
-        variants: {
+      });
+    } catch (error: any) {
+      // If productAttributes table doesn't exist, retry without it
+      if (error?.code === 'P2021' || error?.message?.includes('product_attributes') || error?.message?.includes('does not exist')) {
+        console.warn('⚠️ [PRODUCTS SERVICE] product_attributes table not found, fetching without it:', error.message);
+        product = await db.product.findFirst({
           where: {
+            translations: {
+              some: {
+                slug,
+                locale: lang,
+              },
+            },
             published: true,
+            deletedAt: null,
           },
-          include: {
-            options: {
-              include: {
-                attributeValue: {
-                  include: {
-                    attribute: true,
-                    translations: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-        labels: true,
-        productAttributes: {
-          include: {
-            attribute: {
-              include: {
-                translations: true,
-                values: {
-                  include: {
-                    translations: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
+          include: baseInclude,
+        });
+      } else {
+        // Re-throw if it's a different error
+        throw error;
+      }
+    }
 
     if (!product) {
       throw {
