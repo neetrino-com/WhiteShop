@@ -80,6 +80,23 @@ export default function ProductsPage() {
     }
   }, [isLoggedIn, isAdmin]);
 
+  // Close category dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (categoriesExpanded && !target.closest('[data-category-dropdown]')) {
+        setCategoriesExpanded(false);
+      }
+    };
+
+    if (categoriesExpanded) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [categoriesExpanded]);
+
   const fetchCategories = async () => {
     try {
       setCategoriesLoading(true);
@@ -465,62 +482,96 @@ export default function ProductsPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-8">
+        <div className="mb-6">
           <button
             onClick={() => router.push('/admin')}
-            className="text-gray-600 hover:text-gray-900 mb-4 flex items-center"
+            className="text-gray-600 hover:text-gray-900 mb-2 flex items-center text-sm"
           >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             {t('admin.products.backToAdmin')}
           </button>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-gray-900">{t('admin.products.title')}</h1>
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{t('admin.products.title')}</h1>
+            {(search || selectedCategories.size > 0 || skuSearch || stockFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setSelectedCategories(new Set());
+                  setSkuSearch('');
+                  setStockFilter('all');
+                  setPage(1);
+                }}
+                className="text-sm text-gray-600 hover:text-gray-900 underline"
+              >
+                {t('admin.products.clearAll')}
+              </button>
+            )}
           </div>
         </div>
 
         {/* Search and Filters */}
         <div className="space-y-4 mb-6">
-          {/* Search */}
-          <Card className="p-4">
-            <form onSubmit={handleSearch} className="space-y-3">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t('admin.products.searchPlaceholder')}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <Button type="submit" variant="primary">
-                  {t('admin.products.search')}
-                </Button>
-                {(search || selectedCategories.size > 0 || skuSearch || stockFilter !== 'all') && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setSearch('');
-                      setSelectedCategories(new Set());
-                      setSkuSearch('');
-                      setStockFilter('all');
-                      setPage(1);
-                    }}
-                  >
-                    {t('admin.products.clearAll')}
-                  </Button>
-                )}
-              </div>
-              
-              {/* Category Filter */}
-              <div>
+          {/* Search Fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                {t('admin.products.searchByTitleOrSlug')}
+              </label>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSearch(e as any);
+                  }
+                }}
+                placeholder={t('admin.products.searchPlaceholder')}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                {t('admin.products.searchBySku')}
+              </label>
+              <input
+                type="text"
+                value={skuSearch}
+                onChange={(e) => {
+                  setSkuSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder={t('admin.products.skuPlaceholder')}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Category Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                {t('admin.products.filterByCategory')}
+              </label>
+              <div className="relative" data-category-dropdown>
                 <button
                   type="button"
                   onClick={() => setCategoriesExpanded(!categoriesExpanded)}
-                  className="flex items-center justify-between w-full text-left text-sm font-medium text-gray-700 mb-2 hover:text-gray-900 focus:outline-none"
+                  className="w-full px-4 py-2.5 text-left border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm flex items-center justify-between"
                 >
-                  <span>{t('admin.products.filterByCategory')}</span>
+                  <span className="text-gray-700">
+                    {selectedCategories.size === 0
+                      ? t('admin.products.allCategories')
+                      : selectedCategories.size === 1
+                      ? categories.find(c => selectedCategories.has(c.id))?.title || '1 category'
+                      : `${selectedCategories.size} categories`}
+                  </span>
                   <svg
                     className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${
                       categoriesExpanded ? 'transform rotate-180' : ''
@@ -533,18 +584,18 @@ export default function ProductsPage() {
                   </svg>
                 </button>
                 {categoriesExpanded && (
-                  <>
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                     {categoriesLoading ? (
-                      <div className="text-sm text-gray-500">{t('admin.products.loadingCategories')}</div>
+                      <div className="p-3 text-sm text-gray-500 text-center">{t('admin.products.loadingCategories')}</div>
                     ) : categories.length === 0 ? (
-                      <div className="text-sm text-gray-500">{t('admin.products.noCategoriesAvailable')}</div>
+                      <div className="p-3 text-sm text-gray-500 text-center">{t('admin.products.noCategoriesAvailable')}</div>
                     ) : (
-                      <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md p-3 bg-gray-50">
-                        <div className="space-y-2">
+                      <div className="p-2">
+                        <div className="space-y-1">
                           {categories.map((category) => (
                             <label
                               key={category.id}
-                              className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded"
+                              className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
                             >
                               <input
                                 type="checkbox"
@@ -567,68 +618,54 @@ export default function ProductsPage() {
                         </div>
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
-
-              {/* SKU Search and Stock Filter */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('admin.products.searchBySku')}
-                  </label>
-                  <input
-                    type="text"
-                    value={skuSearch}
-                    onChange={(e) => {
-                      setSkuSearch(e.target.value);
-                      setPage(1);
-                    }}
-                    placeholder={t('admin.products.skuPlaceholder')}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('admin.products.filterByStock')}
-                  </label>
-                  <select
-                    value={stockFilter}
-                    onChange={(e) => {
-                      setStockFilter(e.target.value as 'all' | 'inStock' | 'outOfStock');
-                      setPage(1);
-                    }}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">{t('admin.products.allProducts')}</option>
-                    <option value="inStock">{t('admin.products.inStock')}</option>
-                    <option value="outOfStock">{t('admin.products.outOfStock')}</option>
-                  </select>
-                </div>
-              </div>
-            </form>
-          </Card>
-
-          {/* Delete Selected Block */}
-          <div className="px-4 py-3 flex items-center justify-between border border-gray-200 rounded-md bg-white">
-            <div className="text-sm text-gray-700">{t('admin.products.selectedProducts').replace('{count}', selectedIds.size.toString())}</div>
-            <Button
-              variant="outline"
-              onClick={handleBulkDelete}
-              disabled={selectedIds.size === 0 || bulkDeleting}
-            >
-              {bulkDeleting ? t('admin.products.deleting') : t('admin.products.deleteSelected')}
-            </Button>
+            </div>
+            
+            {/* Stock Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                {t('admin.products.filterByStock')}
+              </label>
+              <select
+                value={stockFilter}
+                onChange={(e) => {
+                  setStockFilter(e.target.value as 'all' | 'inStock' | 'outOfStock');
+                  setPage(1);
+                }}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm"
+              >
+                <option value="all">{t('admin.products.allProducts')}</option>
+                <option value="inStock">{t('admin.products.inStock')}</option>
+                <option value="outOfStock">{t('admin.products.outOfStock')}</option>
+              </select>
+            </div>
           </div>
 
+          {/* Selected Products and Delete */}
+          {selectedIds.size > 0 && (
+            <div className="px-4 py-3 flex items-center justify-between border border-gray-200 rounded-md bg-white">
+              <div className="text-sm text-gray-700">
+                {t('admin.products.selectedProducts').replace('{count}', selectedIds.size.toString())}
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="text-sm"
+              >
+                {bulkDeleting ? t('admin.products.deleting') : t('admin.products.deleteSelected')}
+              </Button>
+            </div>
+          )}
         </div>
 
-        {/* Add Product Form Section - Collapsible */}
+        {/* Add New Product Button */}
         <div className="mb-6">
           <button
             onClick={() => router.push('/admin/products/add')}
-            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 font-medium"
+            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 font-medium text-sm"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
