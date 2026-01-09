@@ -1,11 +1,11 @@
 /**
  * i18n helper functions according to plan.md and structure.md
- * Optimized version with type safety, memoization, and React hooks
+ * Server-side translation functions (can be used in Server Components)
+ * For client-side React hooks, see i18n-client.ts
  */
 
 import { type LanguageCode } from './language';
 import { getStoredLanguage } from './language';
-import { useMemo, useCallback, useState, useEffect } from 'react';
 
 // Pre-load all translations at build time for optimal performance
 import enCommon from '../locales/en/common.json';
@@ -84,8 +84,8 @@ import ruOrders from '../locales/ru/orders.json';
 import ruAdmin from '../locales/ru/admin.json';
 
 // Type definitions for better type safety
-type Namespace = 'common' | 'home' | 'product' | 'products' | 'attributes' | 'delivery' | 'about' | 'contact' | 'faq' | 'login' | 'cookies' | 'delivery-terms' | 'terms' | 'privacy' | 'support' | 'stores' | 'returns' | 'refund-policy' | 'profile' | 'checkout' | 'register' | 'categories' | 'orders' | 'admin';
-type ProductField = 'title' | 'shortDescription' | 'longDescription';
+export type Namespace = 'common' | 'home' | 'product' | 'products' | 'attributes' | 'delivery' | 'about' | 'contact' | 'faq' | 'login' | 'cookies' | 'delivery-terms' | 'terms' | 'privacy' | 'support' | 'stores' | 'returns' | 'refund-policy' | 'profile' | 'checkout' | 'register' | 'categories' | 'orders' | 'admin';
+export type ProductField = 'title' | 'shortDescription' | 'longDescription';
 
 // Translation store - organized by language and namespace
 // Supports en, hy, and ru languages
@@ -492,99 +492,8 @@ export function getAttributeLabel(
   }
 }
 
-/**
- * React hook for translations in client components
- * Automatically handles language updates and memoization
- * 
- * @returns Object with translation function and current language
- * 
- * @example
- * ```tsx
- * const { t, lang } = useTranslation();
- * return <button>{t('common.buttons.addToCart')}</button>;
- * ```
- */
-export function useTranslation() {
-  // Always start with 'en' to prevent hydration mismatch
-  // The language will be updated after mount in useEffect
-  const [lang, setLang] = useState<LanguageCode>('en');
-
-  // Listen to language changes and update state reactively
-  useEffect(() => {
-    // Update language on mount to ensure we have the latest from localStorage
-    const updateLanguage = () => {
-      const storedLang = getStoredLanguage();
-      const newLang: LanguageCode = (storedLang && storedLang in translations) ? storedLang : 'en';
-      setLang((currentLang) => {
-        if (newLang !== currentLang) {
-          // Clear translation cache when language changes
-          clearTranslationCache();
-          return newLang;
-        }
-        return currentLang;
-      });
-    };
-
-    // Update immediately on mount
-    updateLanguage();
-
-    // Listen to language-updated events
-    const handleLanguageUpdate = () => {
-      updateLanguage();
-    };
-
-    window.addEventListener('language-updated', handleLanguageUpdate);
-    return () => {
-      window.removeEventListener('language-updated', handleLanguageUpdate);
-    };
-  }, []); // Empty dependency array - only run on mount/unmount
-
-  // Memoized translation function with validation
-  const translate = useCallback(
-    (path: string) => {
-      if (!path || typeof path !== 'string') {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[i18n] useTranslation: Invalid path provided to t()', path);
-        }
-        return '';
-      }
-      return t(lang, path);
-    },
-    [lang]
-  );
-
-  // Memoized product text getter
-  const getProduct = useCallback(
-    (productId: string, field: ProductField) => {
-      if (!productId || typeof productId !== 'string') {
-        return '';
-      }
-      return getProductText(lang, productId, field);
-    },
-    [lang]
-  );
-
-  // Memoized attribute label getter
-  const getAttribute = useCallback(
-    (type: string, value: string) => {
-      if (!type || !value || typeof type !== 'string' || typeof value !== 'string') {
-        return value || '';
-      }
-      return getAttributeLabel(lang, type, value);
-    },
-    [lang]
-  );
-
-  return useMemo(
-    () => ({
-      t: translate,
-      lang,
-      getProductText: getProduct,
-      getAttributeLabel: getAttribute,
-    }),
-    [translate, lang, getProduct, getAttribute]
-  );
-}
+// Note: useTranslation hook has been moved to i18n-client.ts
+// Import it from './i18n-client' in Client Components
 
 /**
  * Clear translation cache (useful for development/hot reload)

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { apiClient } from '../lib/api-client';
 import { getStoredLanguage } from '../lib/language';
-import { useTranslation } from '../lib/i18n';
+import { useTranslation } from '../lib/i18n-client';
 
 interface Category {
   id: string;

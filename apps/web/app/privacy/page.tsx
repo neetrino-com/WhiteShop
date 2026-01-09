@@ -1,7 +1,7 @@
 'use client';
 
 import { Card } from '@shop/ui';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 import Link from 'next/link';
 
 /**

@@ -4,7 +4,7 @@ import { useState, FormEvent } from 'react';
 import { Button, Input, Card } from '@shop/ui';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth/AuthContext';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 
 export default function RegisterPage() {
   const { t } = useTranslation();

@@ -2,7 +2,7 @@
 
 import { Card, Button, Input } from '@shop/ui';
 import Link from 'next/link';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 
 /**
  * Support page - provides customer support options and resources

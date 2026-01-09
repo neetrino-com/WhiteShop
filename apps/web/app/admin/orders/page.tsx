@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../lib/auth/AuthContext';
 import { Card, Button } from '@shop/ui';
 import { apiClient } from '../../../lib/api-client';
-import { useTranslation } from '../../../lib/i18n';
+import { useTranslation } from '../../../lib/i18n-client';
 
 interface Order {
   id: string;

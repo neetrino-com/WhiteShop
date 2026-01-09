@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { formatPrice, getStoredCurrency } from '../lib/currency';
 import { apiClient } from '../lib/api-client';
 import { useAuth } from '../lib/auth/AuthContext';
-import { useTranslation } from '../lib/i18n';
+import { useTranslation } from '../lib/i18n-client';
 import { CompareIcon } from './icons/CompareIcon';
 import { CartIcon as CartPngIcon } from './icons/CartIcon';
 import { ProductLabels } from './ProductLabels';

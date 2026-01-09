@@ -10,7 +10,7 @@ import { apiClient } from '../../lib/api-client';
 import { formatPrice, type CurrencyCode } from '../../lib/currency';
 import { ProfileMenuDrawer } from '../../components/ProfileMenuDrawer';
 import { UserAvatar } from '../../components/UserAvatar';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 
 interface Address {
   _id?: string;

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@shop/ui';
 import { apiClient } from '../../lib/api-client';
 import { getStoredLanguage } from '../../lib/language';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 
 interface Category {
   id: string;

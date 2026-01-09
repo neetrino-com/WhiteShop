@@ -2,7 +2,8 @@
 
 import { Card } from '@shop/ui';
 import Link from 'next/link';
-import { useTranslation, loadTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
+import { loadTranslation } from '../../lib/i18n';
 import { getStoredLanguage } from '../../lib/language';
 
 /**

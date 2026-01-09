@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getStoredLanguage, setStoredLanguage, LANGUAGES, type LanguageCode } from '../lib/language';
-import { useTranslation } from '../lib/i18n';
+import { useTranslation } from '../lib/i18n-client';
 
 /**
  * Language Switcher Component

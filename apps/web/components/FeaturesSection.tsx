@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useTranslation } from '../lib/i18n';
+import { useTranslation } from '../lib/i18n-client';
 
 /**
  * Features Section Component

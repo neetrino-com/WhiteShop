@@ -7,7 +7,7 @@ import { Card, Button } from '@shop/ui';
 import { apiClient } from '../../../lib/api-client';
 import { AdminMenuDrawer } from '../../../components/AdminMenuDrawer';
 import { getAdminMenuTABS } from '../admin-menu.config';
-import { useTranslation } from '../../../lib/i18n';
+import { useTranslation } from '../../../lib/i18n-client';
 
 interface Brand {
   id: string;

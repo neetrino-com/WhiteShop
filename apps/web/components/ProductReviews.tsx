@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '@shop/ui';
 import { useAuth } from '../lib/auth/AuthContext';
-import { useTranslation } from '../lib/i18n';
+import { useTranslation } from '../lib/i18n-client';
 
 interface Review {
   id: string;

@@ -1,7 +1,7 @@
 'use client';
 
 import { Card } from '@shop/ui';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 
 /**
  * Cookie Policy page - displays cookie policy information

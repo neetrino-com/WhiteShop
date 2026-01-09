@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { TeamCarousel } from '../../components/TeamCarousel';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 
 export const dynamic = 'force-dynamic';
 export const dynamicParams = true;

@@ -1,7 +1,7 @@
 'use client';
 
 import { Card } from '@shop/ui';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 
 /**
  * Refund Policy page - outlines return and refund rules

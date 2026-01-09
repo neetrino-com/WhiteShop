@@ -2,7 +2,7 @@
 
 import { Card, Button } from '@shop/ui';
 import Link from 'next/link';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 
 export default function StoresPage() {
   const { t } = useTranslation();

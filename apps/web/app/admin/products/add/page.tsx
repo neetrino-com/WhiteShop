@@ -7,7 +7,7 @@ import { useAuth } from '../../../../lib/auth/AuthContext';
 import { Card, Button, Input } from '@shop/ui';
 import { apiClient } from '../../../../lib/api-client';
 import { getColorHex, COLOR_MAP } from '../../../../lib/colorMap';
-import { useTranslation } from '../../../../lib/i18n';
+import { useTranslation } from '../../../../lib/i18n-client';
 
 // Component for adding new color/size
 function NewColorSizeInput({ 

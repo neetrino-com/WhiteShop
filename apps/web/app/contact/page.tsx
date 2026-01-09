@@ -4,7 +4,7 @@ import { Button, Input } from '@shop/ui';
 import { useState, useEffect } from 'react';
 import type { FormEvent, ChangeEvent } from 'react';
 import { getStoredLanguage } from '@/lib/language';
-import { useTranslation } from '../../lib/i18n';
+import { useTranslation } from '../../lib/i18n-client';
 import contactData from '../../../../config/contact.json';
 
 // Icons
