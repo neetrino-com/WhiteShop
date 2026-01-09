@@ -21,6 +21,7 @@ function NewColorSizeInput({
   onAdd: (_name: string) => void; 
   placeholder: string;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
 
   const handleAdd = () => {
@@ -52,7 +53,7 @@ function NewColorSizeInput({
         disabled={!name.trim()}
         className="whitespace-nowrap"
       >
-        + Add
+        + {t('admin.common.add')}
       </Button>
     </div>
   );
@@ -1390,7 +1391,7 @@ function AddProductPageContent() {
         imageUrls: [...prev.imageUrls, ...uploadedImages],
       }));
     } catch (error: any) {
-      setImageUploadError(error?.message || 'Failed to process selected images');
+      setImageUploadError(error?.message || t('admin.products.add.failedToProcessImages'));
     } finally {
       setImageUploadLoading(false);
       if (event.target) {
@@ -1424,7 +1425,7 @@ function AddProductPageContent() {
         mainProductImage: base64,
       }));
     } catch (error: any) {
-      setImageUploadError(error?.message || 'Failed to process selected image');
+      setImageUploadError(error?.message || t('admin.products.add.failedToProcessImage'));
     } finally {
       setImageUploadLoading(false);
       if (event.target) {
@@ -1475,7 +1476,7 @@ function AddProductPageContent() {
       console.log('✅ [ADMIN] Color images added to state:', uploadedImages.length);
     } catch (error: any) {
       console.error('❌ [ADMIN] Error uploading color images:', error);
-      alert(error?.message || 'Failed to process selected images');
+      alert(error?.message || t('admin.products.add.failedToProcessImages'));
     } finally {
       setImageUploadLoading(false);
       if (event.target) {
@@ -1533,7 +1534,7 @@ function AddProductPageContent() {
       console.log('✅ [ADMIN] Matrix image added to state');
     } catch (error: any) {
       console.error('❌ [ADMIN] Error uploading matrix image:', error);
-      alert(error?.message || 'Failed to process selected image');
+      alert(error?.message || t('admin.products.add.failedToProcessImage'));
     } finally {
       setImageUploadLoading(false);
       if (event.target) {
@@ -1623,12 +1624,12 @@ function AddProductPageContent() {
     setColorMessage(null);
     const colorAttribute = getColorAttribute();
     if (!colorAttribute) {
-      setColorMessage({ type: 'error', text: 'Color attribute not found' });
+      setColorMessage({ type: 'error', text: t('admin.products.add.colorAttributeNotFound') });
       return;
     }
 
     if (!newColorName.trim()) {
-      setColorMessage({ type: 'error', text: 'Color name is required' });
+      setColorMessage({ type: 'error', text: t('admin.products.add.colorNameRequired') });
       return;
     }
 
@@ -1646,13 +1647,13 @@ function AddProductPageContent() {
             attr.id === colorAttribute.id ? response.data : attr
           )
         );
-        setColorMessage({ type: 'success', text: `Color "${newColorName.trim()}" added successfully` });
+        setColorMessage({ type: 'success', text: t('admin.products.add.colorAddedSuccess').replace('{name}', newColorName.trim()) });
         setNewColorName('');
         // Clear message after 3 seconds
         setTimeout(() => setColorMessage(null), 3000);
       }
     } catch (err: any) {
-      setColorMessage({ type: 'error', text: err.message || 'Failed to add color' });
+      setColorMessage({ type: 'error', text: err.message || t('admin.products.add.failedToAddColor') });
     } finally {
       setAddingColor(false);
     }
@@ -1663,12 +1664,12 @@ function AddProductPageContent() {
     setSizeMessage(null);
     const sizeAttribute = getSizeAttribute();
     if (!sizeAttribute) {
-      setSizeMessage({ type: 'error', text: 'Size attribute not found' });
+      setSizeMessage({ type: 'error', text: t('admin.products.add.sizeAttributeNotFound') });
       return;
     }
 
     if (!newSizeName.trim()) {
-      setSizeMessage({ type: 'error', text: 'Size name is required' });
+      setSizeMessage({ type: 'error', text: t('admin.products.add.sizeNameRequired') });
       return;
     }
 
@@ -1686,13 +1687,13 @@ function AddProductPageContent() {
             attr.id === sizeAttribute.id ? response.data : attr
           )
         );
-        setSizeMessage({ type: 'success', text: `Size "${newSizeName.trim()}" added successfully` });
+        setSizeMessage({ type: 'success', text: t('admin.products.add.sizeAddedSuccess').replace('{name}', newSizeName.trim()) });
         setNewSizeName('');
         // Clear message after 3 seconds
         setTimeout(() => setSizeMessage(null), 3000);
       }
     } catch (err: any) {
-      setSizeMessage({ type: 'error', text: err.message || 'Failed to add size' });
+      setSizeMessage({ type: 'error', text: err.message || t('admin.products.add.failedToAddSize') });
     } finally {
       setAddingSize(false);
     }
@@ -1725,7 +1726,7 @@ function AddProductPageContent() {
             // Add to brands list for future use
             setBrands((prev) => [...prev, brandResponse.data]);
             console.log('✅ [ADMIN] Brand created:', brandResponse.data.id);
-            creationMessages.push(`Brand "${newBrandName.trim()}" successfully created`);
+            creationMessages.push(t('admin.products.add.brandCreatedSuccess').replace('{name}', newBrandName.trim()));
           }
         } catch (err: any) {
           console.error('❌ [ADMIN] Error creating brand:', err);
@@ -1752,7 +1753,9 @@ function AddProductPageContent() {
             setCategories((prev) => [...prev, categoryResponse.data]);
             console.log('✅ [ADMIN] Category created:', categoryResponse.data.id, 'requiresSizes:', categoryResponse.data.requiresSizes);
             creationMessages.push(
-              `Category "${newCategoryName.trim()}" successfully created${newCategoryRequiresSizes ? ' (sizes required)' : ''}`
+              newCategoryRequiresSizes 
+                ? t('admin.products.add.categoryCreatedSuccessSizes').replace('{name}', newCategoryName.trim())
+                : t('admin.products.add.categoryCreatedSuccess').replace('{name}', newCategoryName.trim())
             );
           }
         } catch (err: any) {
@@ -1772,9 +1775,9 @@ function AddProductPageContent() {
       
       if (formData.variants.length === 0) {
         if (useMatrixBuilder) {
-          alert('Please use "Generate Variants from Matrix" button to create variants from the matrix builder.');
+          alert(t('admin.products.add.pleaseUseGenerateVariants'));
         } else {
-          alert('Please add at least one product variant. You can use the Matrix Builder (recommended) or add variants manually.');
+          alert(t('admin.products.add.pleaseAddAtLeastOneVariant'));
         }
         setLoading(false);
         return;
@@ -1789,7 +1792,7 @@ function AddProductPageContent() {
         
         // Validate that at least one color is selected
         if (!variant.colors || variant.colors.length === 0) {
-          alert(`Վարիանտ ${variantIndex}: Խնդրում ենք ընտրել առնվազն մեկ գույն`);
+          alert(t('admin.products.add.variantColorRequired').replace('{index}', variantIndex.toString()));
           setLoading(false);
           return;
         }
@@ -1797,13 +1800,13 @@ function AddProductPageContent() {
         // Validate SKU - must be unique within product
         const variantSku = variant.sku ? variant.sku.trim() : '';
         if (!variantSku || variantSku === '') {
-          alert(`Վարիանտ ${variantIndex}: SKU-ն պարտադիր է: Խնդրում ենք մուտքագրել SKU կամ օգտագործել "Գեներացնել" կոճակը`);
+          alert(t('admin.products.add.variantSkuRequired').replace('{index}', variantIndex.toString()));
           setLoading(false);
           return;
         }
         
         if (skuSet.has(variantSku)) {
-          alert(`Վարիանտ ${variantIndex}: SKU "${variantSku}" արդեն օգտագործված է այս ապրանքի մեջ: Ամեն վարիանտի SKU-ն պետք է եզակի լինի`);
+          alert(t('admin.products.add.variantSkuDuplicate').replace('{index}', variantIndex.toString()).replace('{sku}', variantSku));
           setLoading(false);
           return;
         }
@@ -1821,7 +1824,7 @@ function AddProductPageContent() {
             // Validate price for this color
             const colorPriceValue = parseFloat(colorDataItem.price || '0');
             if (!colorDataItem.price || isNaN(colorPriceValue) || colorPriceValue <= 0) {
-              alert(`Վարիանտ ${variantIndex}: Խնդրում ենք մուտքագրել վավեր գին "${colorDataItem.colorLabel}" գույնի համար`);
+              alert(t('admin.products.add.variantPriceRequired').replace('{index}', variantIndex.toString()).replace('{color}', colorDataItem.colorLabel));
               setLoading(false);
               return;
             }
@@ -1829,7 +1832,7 @@ function AddProductPageContent() {
             // If category requires sizes, check if color has at least one size
             if (categoryRequiresSizes) {
               if (colorSizes.length === 0) {
-                alert(`Վարիանտ ${variantIndex}: Գույն "${colorDataItem.colorLabel}"-ի համար պահանջվում է առնվազն մեկ չափս`);
+                alert(t('admin.products.add.variantSizeRequired').replace('{index}', variantIndex.toString()).replace('{color}', colorDataItem.colorLabel));
                 setLoading(false);
                 return;
               }
@@ -1841,7 +1844,7 @@ function AddProductPageContent() {
                   const sizeLabel = getSizeAttribute()?.values.find((v) => v.value === size)?.label || 
                     colorDataItem.sizeLabels?.[size] || 
                     size.toUpperCase().replace(/-/g, ' ');
-                  alert(`Վարիանտ ${variantIndex}: Գույն "${colorDataItem.colorLabel}" - Խնդրում ենք մուտքագրել պահեստ "${sizeLabel}" չափսի համար`);
+                  alert(t('admin.products.add.variantStockRequired').replace('{index}', variantIndex.toString()).replace('{color}', colorDataItem.colorLabel).replace('{size}', sizeLabel));
                   setLoading(false);
                   return;
                 }
@@ -1850,7 +1853,7 @@ function AddProductPageContent() {
               // If category doesn't require sizes, validate base stock for color
               if (colorSizes.length === 0) {
                 if (!colorDataItem.stock || colorDataItem.stock.trim() === '' || parseInt(colorDataItem.stock) < 0) {
-                  alert(`Վարիանտ ${variantIndex}: Խնդրում ենք մուտքագրել պահեստ "${colorDataItem.colorLabel}" գույնի համար`);
+                  alert(t('admin.products.add.variantColorStockRequired').replace('{index}', variantIndex.toString()).replace('{color}', colorDataItem.colorLabel));
                   setLoading(false);
                   return;
                 }
@@ -2121,9 +2124,9 @@ function AddProductPageContent() {
         finalMedia.push(formData.mainProductImage);
       }
       
-      // Add other media
+      // Add other media (extract URLs from media objects)
       if (media.length > 0) {
-        finalMedia.push(...media);
+        finalMedia.push(...media.map(m => m.url));
       }
       
       if (finalMedia.length > 0) {
@@ -2202,7 +2205,7 @@ function AddProductPageContent() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
-          <p className="text-gray-600">{loadingProduct ? 'Loading product...' : 'Loading...'}</p>
+          <p className="text-gray-600">{loadingProduct ? t('admin.products.add.loadingProduct') : t('admin.products.add.loading')}</p>
         </div>
       </div>
     );
@@ -2216,7 +2219,7 @@ function AddProductPageContent() {
   // Create new attribute
   const handleCreateAttribute = async () => {
     if (!newAttributeName.trim()) {
-      alert('Attribute name is required');
+      alert(t('admin.products.add.attributeNameRequired'));
       return;
     }
 
@@ -2240,7 +2243,7 @@ function AddProductPageContent() {
         setAddingAttribute(false);
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to create attribute');
+      alert(err.message || t('admin.products.add.failedToCreateAttribute'));
       setAddingAttribute(false);
     }
   };
@@ -2248,7 +2251,7 @@ function AddProductPageContent() {
   // Add attribute value
   const handleAddAttributeValue = async () => {
     if (!selectedAttributeId || !newAttributeValue.trim()) {
-      alert('Please select an attribute and enter a value');
+      alert(t('admin.products.add.selectAttributeAndEnterValue'));
       return;
     }
 
@@ -2270,14 +2273,14 @@ function AddProductPageContent() {
         setAddingAttributeValue(false);
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to add attribute value');
+      alert(err.message || t('admin.products.add.failedToAddAttributeValue'));
       setAddingAttributeValue(false);
     }
   };
 
   // Delete attribute
   const handleDeleteAttribute = async (attributeId: string) => {
-    if (!confirm('Are you sure you want to delete this attribute? This will also delete all its values.')) {
+    if (!confirm(t('admin.products.add.deleteAttributeConfirm'))) {
       return;
     }
 
@@ -2290,7 +2293,7 @@ function AddProductPageContent() {
       }
       setDeletingAttribute(null);
     } catch (err: any) {
-      alert(err?.data?.detail || err.message || 'Failed to delete attribute');
+      alert(err?.data?.detail || err.message || t('admin.products.add.failedToDeleteAttribute'));
       setDeletingAttribute(null);
     }
   };
@@ -2299,7 +2302,7 @@ function AddProductPageContent() {
   const handleDeleteAttributeValue = async (valueId: string) => {
     if (!selectedAttributeId) return;
 
-    if (!confirm('Are you sure you want to delete this value?')) {
+    if (!confirm(t('admin.products.add.deleteValueConfirm'))) {
       return;
     }
 
@@ -2316,7 +2319,7 @@ function AddProductPageContent() {
         setDeletingAttributeValue(null);
       }
     } catch (err: any) {
-      alert(err?.data?.detail || err.message || 'Failed to delete attribute value');
+      alert(err?.data?.detail || err.message || t('admin.products.add.failedToDeleteAttributeValue'));
       setDeletingAttributeValue(null);
     }
   };
@@ -2335,21 +2338,21 @@ function AddProductPageContent() {
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
-                Back to Admin Panel
+                {t('admin.products.add.backToAdmin')}
               </button>
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit Product' : 'Add New Product'}</h1>
+            <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? t('admin.products.add.editProduct') : t('admin.products.add.addNewProduct')}</h1>
           </div>
 
           <Card className="p-6 pb-24 sm:pb-24">
           <form onSubmit={handleSubmit} className="space-y-14">
             {/* Basic Information */}
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Basic Information</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('admin.products.add.basicInformation')}</h2>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Title *
+                    {t('admin.products.add.title')} *
                   </label>
                   <Input
                     type="text"
@@ -2362,7 +2365,7 @@ function AddProductPageContent() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Slug *
+                    {t('admin.products.add.slug')} *
                   </label>
                   <Input
                     type="text"
@@ -2375,7 +2378,7 @@ function AddProductPageContent() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description
+                    {t('admin.products.add.description')}
                   </label>
                   <textarea
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2467,12 +2470,12 @@ function AddProductPageContent() {
 
             {/* Categories & Brands */}
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Categories & Brands</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('admin.products.add.categoriesAndBrands')}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Categories - Multi-select */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Categories <span className="text-gray-500 font-normal">(Select multiple)</span>
+                    {t('admin.products.add.categories')} <span className="text-gray-500 font-normal">{t('admin.products.add.selectMultiple')}</span>
                   </label>
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 mb-2">
@@ -2489,7 +2492,7 @@ function AddProductPageContent() {
                         className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
                       <label htmlFor="select-category" className="text-sm text-gray-700">
-                        Select existing categories
+                        {t('admin.products.add.selectExistingCategories')}
                       </label>
                     </div>
                     <div className="flex items-center gap-2 mb-2">
@@ -2505,7 +2508,7 @@ function AddProductPageContent() {
                         className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
                       <label htmlFor="new-category" className="text-sm text-gray-700">
-                        Add new category
+                        {t('admin.products.add.addNewCategory')}
                       </label>
                     </div>
                     {!useNewCategory ? (
@@ -2517,8 +2520,10 @@ function AddProductPageContent() {
                         >
                           <span className="text-gray-700">
                             {formData.categoryIds.length === 0
-                              ? 'Select categories'
-                              : `${formData.categoryIds.length} ${formData.categoryIds.length === 1 ? 'category' : 'categories'} selected`}
+                              ? t('admin.products.add.selectCategories')
+                              : formData.categoryIds.length === 1 
+                                ? t('admin.products.add.categorySelected').replace('{count}', formData.categoryIds.length.toString())
+                                : t('admin.products.add.categoriesSelected').replace('{count}', formData.categoryIds.length.toString())}
                           </span>
                           <svg
                             className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${
@@ -2614,7 +2619,7 @@ function AddProductPageContent() {
                             className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                           />
                           <span className="text-sm text-gray-700">
-                            This category requires sizes (e.g., clothing, shoes)
+                            {t('admin.products.add.categoryRequiresSizes')}
                           </span>
                         </label>
                       </div>
@@ -2625,7 +2630,7 @@ function AddProductPageContent() {
                 {/* Brands - Multi-select */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Brands <span className="text-gray-500 font-normal">(Select multiple)</span>
+                    {t('admin.products.add.brands')} <span className="text-gray-500 font-normal">{t('admin.products.add.selectMultiple')}</span>
                   </label>
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 mb-2">
@@ -2641,7 +2646,7 @@ function AddProductPageContent() {
                         className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
                       <label htmlFor="select-brand" className="text-sm text-gray-700">
-                        Select existing brands
+                        {t('admin.products.add.selectExistingBrands')}
                       </label>
                     </div>
                     <div className="flex items-center gap-2 mb-2">
@@ -2656,7 +2661,7 @@ function AddProductPageContent() {
                         className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
                       <label htmlFor="new-brand" className="text-sm text-gray-700">
-                        Add new brand
+                        {t('admin.products.add.addNewBrand')}
                       </label>
                     </div>
                     {!useNewBrand ? (
@@ -2668,8 +2673,10 @@ function AddProductPageContent() {
                         >
                           <span className="text-gray-700">
                             {formData.brandIds.length === 0
-                              ? 'Select brands'
-                              : `${formData.brandIds.length} ${formData.brandIds.length === 1 ? 'brand' : 'brands'} selected`}
+                              ? t('admin.products.add.selectBrands')
+                              : formData.brandIds.length === 1 
+                                ? t('admin.products.add.brandSelected').replace('{count}', formData.brandIds.length.toString())
+                                : t('admin.products.add.brandsSelected').replace('{count}', formData.brandIds.length.toString())}
                           </span>
                           <svg
                             className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${
@@ -2727,13 +2734,13 @@ function AddProductPageContent() {
             {/* Product Labels */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">Product Labels</h2>
+                <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.productLabels')}</h2>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={addLabel}
                 >
-                  + Add Label
+                  {t('admin.products.add.addLabel')}
                 </Button>
               </div>
               {formData.labels.length === 0 ? (
@@ -2746,21 +2753,21 @@ function AddProductPageContent() {
                   {formData.labels.map((label, index) => (
                     <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-medium text-gray-900">Label {index + 1}</h3>
+                        <h3 className="text-lg font-medium text-gray-900">{t('admin.products.add.label').replace('{index}', (index + 1).toString())}</h3>
                         <Button
                           type="button"
                           variant="ghost"
                           onClick={() => removeLabel(index)}
                           className="text-red-600 hover:text-red-700"
                         >
-                          Remove
+                          {t('admin.products.add.remove')}
                         </Button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Label Type */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Type *
+                            {t('admin.products.add.type')} *
                           </label>
                           <select
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2768,15 +2775,15 @@ function AddProductPageContent() {
                             onChange={(e) => updateLabel(index, 'type', e.target.value as 'text' | 'percentage')}
                             required
                           >
-                            <option value="text">Text (New Product, Hot, Sale, etc.)</option>
-                            <option value="percentage">Percentage (50%, 30%, etc.)</option>
+                            <option value="text">{t('admin.products.add.textType')}</option>
+                            <option value="percentage">{t('admin.products.add.percentageType')}</option>
                           </select>
                         </div>
 
                         {/* Label Value */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Value *
+                            {t('admin.products.add.value')} *
                           </label>
                           <Input
                             type="text"
@@ -2788,7 +2795,7 @@ function AddProductPageContent() {
                           />
                           {label.type === 'percentage' && (
                             <p className="mt-1 text-xs text-blue-600 font-medium">
-                              ⓘ This value will be automatically updated based on the product's discount percentage. You can enter any number here as a placeholder.
+                              {t('admin.products.add.percentageAutoUpdateHint')}
                             </p>
                           )}
                         </div>
@@ -2796,7 +2803,7 @@ function AddProductPageContent() {
                         {/* Label Position */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Position *
+                            {t('admin.products.add.position')} *
                           </label>
                           <select
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2804,17 +2811,17 @@ function AddProductPageContent() {
                             onChange={(e) => updateLabel(index, 'position', e.target.value)}
                             required
                           >
-                            <option value="top-left">Top Left</option>
-                            <option value="top-right">Top Right</option>
-                            <option value="bottom-left">Bottom Left</option>
-                            <option value="bottom-right">Bottom Right</option>
+                            <option value="top-left">{t('admin.products.add.topLeft')}</option>
+                            <option value="top-right">{t('admin.products.add.topRight')}</option>
+                            <option value="bottom-left">{t('admin.products.add.bottomLeft')}</option>
+                            <option value="bottom-right">{t('admin.products.add.bottomRight')}</option>
                           </select>
                         </div>
 
                         {/* Label Color (Optional) */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Color (Optional)
+                            {t('admin.products.add.colorOptional')}
                           </label>
                           <Input
                             type="text"
@@ -2823,7 +2830,7 @@ function AddProductPageContent() {
                             placeholder={t('admin.products.add.colorHexPlaceholder')}
                             className="w-full"
                           />
-                          <p className="mt-1 text-xs text-gray-500">Hex color code (e.g., #FF0000) or leave empty</p>
+                          <p className="mt-1 text-xs text-gray-500">{t('admin.products.add.hexColorHint')}</p>
                         </div>
                       </div>
                     </div>
@@ -2835,19 +2842,19 @@ function AddProductPageContent() {
             {/* Attributes Section */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">Attributes</h2>
+                <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.attributes')}</h2>
               </div>
               
               <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
                 {/* Select/Create Attribute */}
                 <div className="space-y-3">
-                  <label className="text-sm font-medium text-gray-700">Select Attribute:</label>
+                  <label className="text-sm font-medium text-gray-700">{t('admin.products.add.selectAttribute')}</label>
                   <select
                     value={selectedAttributeId || ''}
                     onChange={(e) => setSelectedAttributeId(e.target.value || null)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">-- Select Attribute --</option>
+                    <option value="">{t('admin.products.add.selectAttributeOption')}</option>
                     {attributes.map((attr) => (
                       <option key={attr.id} value={attr.id}>
                         {attr.name}
@@ -2857,7 +2864,7 @@ function AddProductPageContent() {
 
                   {/* Create New Attribute */}
                   <div className="space-y-2 pt-2 border-t">
-                    <label className="text-sm font-medium text-gray-700">Create New Attribute:</label>
+                    <label className="text-sm font-medium text-gray-700">{t('admin.products.add.createNewAttribute')}</label>
                     <Input
                       type="text"
                       value={newAttributeName}
@@ -2878,11 +2885,11 @@ function AddProductPageContent() {
                       disabled={addingAttribute || !newAttributeName.trim()}
                       className="w-full"
                     >
-                      {addingAttribute ? 'Creating...' : 'Create Attribute'}
+                      {addingAttribute ? t('admin.products.add.creating') : t('admin.products.add.createAttribute')}
                     </Button>
                     {newAttributeName.trim() && (
                       <p className="text-xs text-gray-500">
-                        Key will be auto-generated: <span className="font-mono">{newAttributeName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}</span>
+                        {t('admin.products.add.keyAutoGenerated')} <span className="font-mono">{newAttributeName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}</span>
                       </p>
                     )}
                   </div>
@@ -2891,7 +2898,7 @@ function AddProductPageContent() {
                   {selectedAttributeId && (
                     <div className="space-y-2 pt-2 border-t">
                       <label className="text-sm font-medium text-gray-700">
-                        Add Value to "{attributes.find((a) => a.id === selectedAttributeId)?.name}":
+                        {t('admin.products.add.addValueTo').replace('{name}', attributes.find((a) => a.id === selectedAttributeId)?.name || '')}:
                       </label>
                       <div className="flex gap-2">
                         <Input
@@ -2913,7 +2920,7 @@ function AddProductPageContent() {
                           onClick={handleAddAttributeValue}
                           disabled={addingAttributeValue || !newAttributeValue.trim()}
                         >
-                          {addingAttributeValue ? '...' : '+'}
+                          {addingAttributeValue ? t('admin.products.add.adding') : '+'}
                         </Button>
                       </div>
 
@@ -2955,9 +2962,9 @@ function AddProductPageContent() {
             {!useMatrixBuilder && formData.variants.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-gray-900">Product Variants</h2>
+                  <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.productVariants')}</h2>
                   <span className="text-sm text-gray-500">
-                    {formData.variants.length} variant(s) created
+                    {t('admin.products.add.variantsCreated').replace('{count}', formData.variants.length.toString())}
                   </span>
                 </div>
                 <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
@@ -2965,10 +2972,10 @@ function AddProductPageContent() {
                     <div key={variant.id} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-medium text-gray-900">
-                          Variant {variantIndex + 1}
+                          {t('admin.products.add.variantNumber').replace('{index}', (variantIndex + 1).toString())}
                         </h3>
                         <div className="text-sm text-gray-600">
-                          {variant.sku && <span>SKU: {variant.sku}</span>}
+                          {variant.sku && <span>{t('admin.products.add.sku')} {variant.sku}</span>}
                         </div>
                       </div>
                       {variant.colors && variant.colors.length > 0 ? (
@@ -2989,20 +2996,20 @@ function AddProductPageContent() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
                                   {colorData.price && (
                                     <div>
-                                      <label className="block text-xs text-gray-500 mb-1">Price</label>
+                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.price')}</label>
                                       <div className="text-sm font-medium text-gray-900">{colorData.price}</div>
                                     </div>
                                   )}
                                   {colorData.stock && (
                                     <div>
-                                      <label className="block text-xs text-gray-500 mb-1">Stock</label>
+                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')}</label>
                                       <div className="text-sm font-medium text-gray-900">{colorData.stock}</div>
                                     </div>
                                   )}
                                 </div>
                                 {colorData.sizes && colorData.sizes.length > 0 && (
                                   <div>
-                                    <label className="block text-xs text-gray-500 mb-2">Sizes & Stock</label>
+                                    <label className="block text-xs text-gray-500 mb-2">{t('admin.products.add.sizesAndStock')}</label>
                                     <div className="flex flex-wrap gap-2">
                                       {colorData.sizes.map((sizeValue) => {
                                         const sizeLabel = getSizeAttribute()?.values.find(v => v.value === sizeValue)?.label || sizeValue;
@@ -3019,7 +3026,7 @@ function AddProductPageContent() {
                                 )}
                                 {colorData.images && colorData.images.length > 0 && (
                                   <div className="mt-3">
-                                    <label className="block text-xs text-gray-500 mb-2">Images</label>
+                                    <label className="block text-xs text-gray-500 mb-2">{t('admin.products.add.images')}</label>
                                     <div className="flex gap-2 flex-wrap">
                                       {colorData.images.map((img, imgIndex) => (
                                         <img
@@ -3037,7 +3044,7 @@ function AddProductPageContent() {
                           })}
                         </div>
                       ) : (
-                        <div className="text-sm text-gray-500">No colors added</div>
+                        <div className="text-sm text-gray-500">{t('admin.products.add.noColorsAdded')}</div>
                       )}
                     </div>
                   ))}
@@ -3048,7 +3055,7 @@ function AddProductPageContent() {
             {/* Matrix Variant Builder */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">Variant Builder</h2>
+                <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.variantBuilder')}</h2>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -3065,7 +3072,7 @@ function AddProductPageContent() {
                       }}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
-                    <span className="text-sm text-gray-700">Use Matrix Builder (Recommended)</span>
+                    <span className="text-sm text-gray-700">{t('admin.products.add.useMatrixBuilder')}</span>
                   </label>
                 </div>
               </div>
@@ -3077,7 +3084,7 @@ function AddProductPageContent() {
                     {/* Colors Selection */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-3">
-                        Select Colors (Optional)
+                        {t('admin.products.add.selectColors')}
                       </label>
                       {colorAttribute && colorAttribute.values && colorAttribute.values.length > 0 ? (
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto">
@@ -3126,7 +3133,7 @@ function AddProductPageContent() {
                         </div>
                       ) : (
                         <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center text-gray-500 text-sm">
-                          No colors available. Add colors in Attributes section above.
+                          {t('admin.products.add.noColorsAvailable')}
                         </div>
                       )}
                     </div>
@@ -3134,7 +3141,7 @@ function AddProductPageContent() {
                     {/* Sizes Selection */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-3">
-                        Select Sizes {isClothingCategory() ? '*' : '(Optional)'}
+                        {isClothingCategory() ? t('admin.products.add.selectSizes') + ' *' : t('admin.products.add.selectSizesOptional')}
                       </label>
                       {sizeAttribute && sizeAttribute.values && sizeAttribute.values.length > 0 ? (
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto">
@@ -3179,8 +3186,8 @@ function AddProductPageContent() {
                       ) : (
                         <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center text-gray-500 text-sm">
                           {isClothingCategory() 
-                            ? 'No sizes available. Add sizes in Attributes section above.' 
-                            : 'No sizes available. Sizes are optional for this category.'}
+                            ? t('admin.products.add.noSizesAvailable')
+                            : t('admin.products.add.noSizesAvailableOptional')}
                         </div>
                       )}
                     </div>
@@ -3191,14 +3198,14 @@ function AddProductPageContent() {
                     <div className="mt-6">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-gray-900">
-                          Variant Matrix {
+                          {t('admin.products.add.variantMatrix')} {
                             matrixSelectedColors.length > 0 && matrixSelectedSizes.length > 0
-                              ? `(${matrixSelectedColors.length} colors × ${matrixSelectedSizes.length} sizes)`
+                              ? t('admin.products.add.variantMatrixColorsSizes').replace('{colors}', matrixSelectedColors.length.toString()).replace('{sizes}', matrixSelectedSizes.length.toString())
                               : matrixSelectedColors.length > 0
-                              ? `(${matrixSelectedColors.length} colors)`
+                              ? t('admin.products.add.variantMatrixColors').replace('{count}', matrixSelectedColors.length.toString())
                               : matrixSelectedSizes.length > 0
-                              ? `(${matrixSelectedSizes.length} sizes)`
-                              : '(Single variant)'
+                              ? t('admin.products.add.variantMatrixSizes').replace('{count}', matrixSelectedSizes.length.toString())
+                              : t('admin.products.add.singleVariant')
                           }
                         </h3>
                         <div className="flex gap-2">
@@ -3252,7 +3259,7 @@ function AddProductPageContent() {
                               setMatrixVariants(newMatrixVariants);
                             }}
                           >
-                            Generate SKU
+                            {t('admin.products.add.generateSku')}
                           </Button>
                           <Button
                             type="button"
@@ -3260,9 +3267,9 @@ function AddProductPageContent() {
                             size="sm"
                             onClick={() => {
                             // Bulk fill all variants with same values
-                            const defaultPrice = prompt('Enter default price for all variants:') || '';
-                            const defaultStock = prompt('Enter default stock for all variants:') || '';
-                            const defaultSku = prompt('Enter SKU prefix (will add -color-size if applicable):') || '';
+                            const defaultPrice = prompt(t('admin.products.add.enterDefaultPrice')) || '';
+                            const defaultStock = prompt(t('admin.products.add.enterDefaultStock')) || '';
+                            const defaultSku = prompt(t('admin.products.add.enterSkuPrefix')) || '';
                             
                             if (defaultPrice || defaultStock || defaultSku) {
                               const newMatrixVariants = { ...matrixVariants };
@@ -3317,7 +3324,7 @@ function AddProductPageContent() {
                             }
                           }}
                         >
-                          Bulk Fill
+                          {t('admin.products.add.bulkFill')}
                         </Button>
                         </div>
                       </div>
@@ -3340,7 +3347,7 @@ function AddProductPageContent() {
                                 })
                               ) : (
                                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  Variant
+                                  {t('admin.products.add.variant')}
                                 </th>
                               )}
                             </tr>
@@ -3364,7 +3371,7 @@ function AddProductPageContent() {
                                       </div>
                                       {/* Image Upload Section - Per Row */}
                                       <div>
-                                        <label className="block text-xs text-gray-500 mb-1">Image</label>
+                                        <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.image')}</label>
                                         <div className="space-y-2">
                                           {/* Preview existing image */}
                                           {matrixVariants[colorValue]?.image && (
@@ -3396,7 +3403,7 @@ function AddProductPageContent() {
                                             disabled={imageUploadLoading}
                                             className="w-full text-xs"
                                           >
-                                            {imageUploadLoading && matrixImageTarget === colorValue ? 'Uploading...' : matrixVariants[colorValue]?.image ? 'Change Image' : '+ Add Image'}
+                                            {imageUploadLoading && matrixImageTarget === colorValue ? t('admin.products.add.uploading') : matrixVariants[colorValue]?.image ? t('admin.products.add.changeImage') : t('admin.products.add.addImage')}
                                           </Button>
                                         </div>
                                       </div>
@@ -3412,7 +3419,7 @@ function AddProductPageContent() {
                                         <td key={sizeValue} className="px-4 py-3 border-r last:border-r-0">
                                           <div className="space-y-2 min-w-[200px]">
                                             <div>
-                                              <label className="block text-xs text-gray-500 mb-1">Price *</label>
+                                              <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.price')} *</label>
                                               <Input
                                                 type="number"
                                                 value={variant.price}
@@ -3422,7 +3429,7 @@ function AddProductPageContent() {
                                                     [key]: { ...variant, price: e.target.value }
                                                   });
                                                 }}
-                                                placeholder="0.00"
+                                                placeholder={t('admin.products.add.pricePlaceholder')}
                                                 className="w-full text-sm"
                                                 min="0"
                                                 step="0.01"
@@ -3430,7 +3437,7 @@ function AddProductPageContent() {
                                               />
                                             </div>
                                             <div>
-                                              <label className="block text-xs text-gray-500 mb-1">Compare At Price</label>
+                                              <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.compareAtPrice')}</label>
                                               <Input
                                                 type="number"
                                                 value={variant.compareAtPrice}
@@ -3440,14 +3447,14 @@ function AddProductPageContent() {
                                                     [key]: { ...variant, compareAtPrice: e.target.value }
                                                   });
                                                 }}
-                                                placeholder="0.00"
+                                                placeholder={t('admin.products.add.pricePlaceholder')}
                                                 className="w-full text-sm"
                                                 min="0"
                                                 step="0.01"
                                               />
                                             </div>
                                             <div>
-                                              <label className="block text-xs text-gray-500 mb-1">Stock *</label>
+                                              <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')} *</label>
                                               <Input
                                                 type="number"
                                                 value={variant.stock}
@@ -3457,14 +3464,14 @@ function AddProductPageContent() {
                                                     [key]: { ...variant, stock: e.target.value }
                                                   });
                                                 }}
-                                                placeholder="0"
+                                                placeholder={t('admin.products.add.stockPlaceholder')}
                                                 className="w-full text-sm"
                                                 min="0"
                                                 required
                                               />
                                             </div>
                                             <div>
-                                              <label className="block text-xs text-gray-500 mb-1">SKU</label>
+                                              <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.sku').replace(':', '')}</label>
                                               <Input
                                                 type="text"
                                                 value={variant.sku}
@@ -3507,7 +3514,7 @@ function AddProductPageContent() {
                                           />
                                         </div>
                                         <div>
-                                          <label className="block text-xs text-gray-500 mb-1">Compare At Price</label>
+                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.compareAtPrice')}</label>
                                           <Input
                                             type="number"
                                             value={matrixVariants[colorValue]?.compareAtPrice || ''}
@@ -3520,14 +3527,14 @@ function AddProductPageContent() {
                                                 }
                                               });
                                             }}
-                                            placeholder="0.00"
+                                            placeholder={t('admin.products.add.pricePlaceholder')}
                                             className="w-full text-sm"
                                             min="0"
                                             step="0.01"
                                           />
                                         </div>
                                         <div>
-                                          <label className="block text-xs text-gray-500 mb-1">Stock *</label>
+                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')} *</label>
                                           <Input
                                             type="number"
                                             value={matrixVariants[colorValue]?.stock || ''}
@@ -3540,14 +3547,14 @@ function AddProductPageContent() {
                                                 }
                                               });
                                             }}
-                                            placeholder="0"
+                                            placeholder={t('admin.products.add.stockPlaceholder')}
                                             className="w-full text-sm"
                                             min="0"
                                             required
                                           />
                                         </div>
                                         <div>
-                                          <label className="block text-xs text-gray-500 mb-1">SKU</label>
+                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.sku').replace(':', '')}</label>
                                           <Input
                                             type="text"
                                             value={matrixVariants[colorValue]?.sku || ''}
@@ -3560,7 +3567,7 @@ function AddProductPageContent() {
                                                 }
                                               });
                                             }}
-                                            placeholder="Auto-generated"
+                                            placeholder={t('admin.products.add.autoGenerated')}
                                             className="w-full text-sm"
                                           />
                                         </div>
@@ -3574,7 +3581,7 @@ function AddProductPageContent() {
                               // Only sizes, no colors
                               <tr className="hover:bg-gray-50">
                                 <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r">
-                                  <span className="text-sm font-medium text-gray-900">Sizes</span>
+                                  <span className="text-sm font-medium text-gray-900">{t('admin.products.add.sizes')}</span>
                                 </td>
                                 {matrixSelectedSizes.map((sizeValue) => {
                                   const sizeLabel = getSizeAttribute()?.values.find(v => v.value === sizeValue)?.label || sizeValue;
@@ -3585,7 +3592,7 @@ function AddProductPageContent() {
                                     <td key={sizeValue} className="px-4 py-3 border-r last:border-r-0">
                                       <div className="space-y-2 min-w-[200px]">
                                         <div>
-                                          <label className="block text-xs text-gray-500 mb-1">Price *</label>
+                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.price')} *</label>
                                           <Input
                                             type="number"
                                             value={variant.price}
@@ -3595,7 +3602,7 @@ function AddProductPageContent() {
                                                 [key]: { ...variant, price: e.target.value }
                                               });
                                             }}
-                                            placeholder="0.00"
+                                            placeholder={t('admin.products.add.pricePlaceholder')}
                                             className="w-full text-sm"
                                             min="0"
                                             step="0.01"
@@ -3603,7 +3610,7 @@ function AddProductPageContent() {
                                           />
                                         </div>
                                         <div>
-                                          <label className="block text-xs text-gray-500 mb-1">Compare At Price</label>
+                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.compareAtPrice')}</label>
                                           <Input
                                             type="number"
                                             value={variant.compareAtPrice}
@@ -3613,14 +3620,14 @@ function AddProductPageContent() {
                                                 [key]: { ...variant, compareAtPrice: e.target.value }
                                               });
                                             }}
-                                            placeholder="0.00"
+                                            placeholder={t('admin.products.add.pricePlaceholder')}
                                             className="w-full text-sm"
                                             min="0"
                                             step="0.01"
                                           />
                                         </div>
                                         <div>
-                                          <label className="block text-xs text-gray-500 mb-1">Stock *</label>
+                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')} *</label>
                                           <Input
                                             type="number"
                                             value={variant.stock}
@@ -3630,14 +3637,14 @@ function AddProductPageContent() {
                                                 [key]: { ...variant, stock: e.target.value }
                                               });
                                             }}
-                                            placeholder="0"
+                                            placeholder={t('admin.products.add.stockPlaceholder')}
                                             className="w-full text-sm"
                                             min="0"
                                             required
                                           />
                                         </div>
                                         <div>
-                                          <label className="block text-xs text-gray-500 mb-1">SKU</label>
+                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.sku').replace(':', '')}</label>
                                           <Input
                                             type="text"
                                             value={variant.sku}
@@ -3647,7 +3654,7 @@ function AddProductPageContent() {
                                                 [key]: { ...variant, sku: e.target.value }
                                               });
                                             }}
-                                            placeholder="Auto-generated"
+                                            placeholder={t('admin.products.add.autoGenerated')}
                                             className="w-full text-sm"
                                           />
                                         </div>
@@ -3660,12 +3667,12 @@ function AddProductPageContent() {
                               // No colors, no sizes - single variant
                               <tr className="hover:bg-gray-50">
                                 <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r">
-                                  <span className="text-sm font-medium text-gray-900">Single Variant</span>
+                                  <span className="text-sm font-medium text-gray-900">{t('admin.products.add.singleVariantLabel')}</span>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <div className="space-y-2 min-w-[200px]">
+                                    <div className="space-y-2 min-w-[200px]">
                                     <div>
-                                      <label className="block text-xs text-gray-500 mb-1">Price *</label>
+                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.price')} *</label>
                                       <Input
                                         type="number"
                                         value={matrixVariants['single']?.price || ''}
@@ -3678,7 +3685,7 @@ function AddProductPageContent() {
                                             }
                                           });
                                         }}
-                                        placeholder="0.00"
+                                        placeholder={t('admin.products.add.pricePlaceholder')}
                                         className="w-full text-sm"
                                         min="0"
                                         step="0.01"
@@ -3686,7 +3693,7 @@ function AddProductPageContent() {
                                       />
                                     </div>
                                     <div>
-                                      <label className="block text-xs text-gray-500 mb-1">Compare At Price</label>
+                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.compareAtPrice')}</label>
                                       <Input
                                         type="number"
                                         value={matrixVariants['single']?.compareAtPrice || ''}
@@ -3699,14 +3706,14 @@ function AddProductPageContent() {
                                             }
                                           });
                                         }}
-                                        placeholder="0.00"
+                                        placeholder={t('admin.products.add.pricePlaceholder')}
                                         className="w-full text-sm"
                                         min="0"
                                         step="0.01"
                                       />
                                     </div>
                                     <div>
-                                      <label className="block text-xs text-gray-500 mb-1">Stock *</label>
+                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')} *</label>
                                       <Input
                                         type="number"
                                         value={matrixVariants['single']?.stock || ''}
@@ -3719,14 +3726,14 @@ function AddProductPageContent() {
                                             }
                                           });
                                         }}
-                                        placeholder="0"
+                                        placeholder={t('admin.products.add.stockPlaceholder')}
                                         className="w-full text-sm"
                                         min="0"
                                         required
                                       />
                                     </div>
                                     <div>
-                                      <label className="block text-xs text-gray-500 mb-1">SKU</label>
+                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.sku').replace(':', '')}</label>
                                       <Input
                                         type="text"
                                         value={matrixVariants['single']?.sku || ''}
@@ -3739,27 +3746,27 @@ function AddProductPageContent() {
                                             }
                                           });
                                         }}
-                                        placeholder="Auto-generated"
+                                        placeholder={t('admin.products.add.autoGenerated')}
                                         className="w-full text-sm"
                                       />
                                     </div>
                                     {/* Image Upload Section */}
                                     <div>
-                                      <label className="block text-xs text-gray-500 mb-1">Image</label>
+                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.image')}</label>
                                       <div className="space-y-2">
                                         {/* Preview existing image */}
                                         {matrixVariants['single']?.image && (
                                           <div className="relative group mb-2">
                                             <img
                                               src={matrixVariants['single'].image}
-                                              alt="Preview"
+                                              alt={t('admin.products.add.preview')}
                                               className="w-full h-24 object-cover rounded border border-gray-300"
                                             />
                                             <button
                                               type="button"
                                               onClick={() => removeMatrixImage('single')}
                                               className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                                              title="Remove image"
+                                              title={t('admin.products.add.removeImage')}
                                             >
                                               ×
                                             </button>
@@ -3777,7 +3784,7 @@ function AddProductPageContent() {
                                           disabled={imageUploadLoading}
                                           className="w-full text-xs"
                                         >
-                                          {imageUploadLoading && matrixImageTarget === 'single' ? 'Uploading...' : matrixVariants['single']?.image ? 'Change Image' : '+ Add Image'}
+                                          {imageUploadLoading && matrixImageTarget === 'single' ? t('admin.products.add.uploading') : matrixVariants['single']?.image ? t('admin.products.add.changeImage') : t('admin.products.add.addImage')}
                                         </Button>
                                       </div>
                                     </div>
@@ -3974,7 +3981,7 @@ function AddProductPageContent() {
 
                             // Validate that variants were created
                             if (newVariants.length === 0) {
-                              alert('No variants were created. Please select at least one color or size.');
+                              alert(t('admin.products.add.noVariantsCreated'));
                               return;
                             }
 
@@ -3995,14 +4002,14 @@ function AddProductPageContent() {
                             const variantCount = newVariants.length;
                             const colorCount = matrixSelectedColors.length;
                             const sizeCount = matrixSelectedSizes.length;
-                            let message = `Successfully created ${variantCount} variant(s)!`;
-                            if (colorCount > 0) message += ` (${colorCount} color(s))`;
-                            if (sizeCount > 0) message += ` (${sizeCount} size(s))`;
+                            let message = t('admin.products.add.variantsCreatedSuccess').replace('{count}', variantCount.toString());
+                            if (colorCount > 0) message += t('admin.products.add.variantsCreatedSuccessColors').replace('{count}', colorCount.toString());
+                            if (sizeCount > 0) message += t('admin.products.add.variantsCreatedSuccessSizes').replace('{count}', sizeCount.toString());
                             alert(message);
                           }}
                           className="bg-blue-600 text-white hover:bg-blue-700"
                         >
-                          Generate Variants from Matrix
+                          {t('admin.products.add.generateVariantsFromMatrix')}
                         </Button>
                       </div>
                     </div>
@@ -4010,8 +4017,8 @@ function AddProductPageContent() {
                     <div className="mt-6 p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center">
                       <p className="text-gray-500">
                         {isClothingCategory() && matrixSelectedSizes.length === 0 && matrixSelectedColors.length === 0
-                          ? 'Please select at least one size or color to create variants'
-                          : 'Select colors and/or sizes to create variant matrix'}
+                          ? t('admin.products.add.selectAtLeastOneSizeOrColor')
+                          : t('admin.products.add.selectColorsOrSizes')}
                       </p>
                     </div>
                   )}
@@ -4031,7 +4038,7 @@ function AddProductPageContent() {
                   />
                   <span className="text-sm font-medium text-gray-700 flex items-center gap-1">
                     <span aria-hidden="true">⭐</span>
-                    Mark as Featured (for homepage tab)
+                    {t('admin.products.add.markAsFeatured')}
                   </span>
                 </label>
               </div>
@@ -4046,7 +4053,7 @@ function AddProductPageContent() {
                   disabled={loading}
                   className="flex-1 w-full sm:w-auto order-2 sm:order-1"
                 >
-                  {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Product' : 'Create Product')}
+                  {loading ? (isEditMode ? t('admin.products.add.updating') : t('admin.products.add.creating')) : (isEditMode ? t('admin.products.add.updateProduct') : t('admin.products.add.createProduct'))}
                 </Button>
                 <Button
                   type="button"
@@ -4055,7 +4062,7 @@ function AddProductPageContent() {
                   disabled={loading}
                   className="w-full sm:w-auto order-1 sm:order-2"
                 >
-                  Cancel
+                  {t('admin.common.cancel')}
                 </Button>
               </div>
             </div>
