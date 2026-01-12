@@ -260,7 +260,10 @@ function AddProductPageContent() {
     };
 
     if (openValueDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
+      // Use setTimeout to avoid immediate closure
+      setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside);
+      }, 0);
     }
 
     return () => {
@@ -3352,10 +3355,181 @@ function AddProductPageContent() {
                                       );
                                     }
                                     
-                                    // For other attributes, show empty cell
+                                    // For other attributes, show clickable dropdown to select values
+                                    const otherAttribute = attributes.find(a => a.id === attributeId);
+                                    const otherIsColor = otherAttribute?.key === 'color';
+                                    // Get selected values for this attribute in this variant (if any)
+                                    const otherSelectedValueIds = variant.selectedValueIds.filter(id => {
+                                      return otherAttribute?.values.some(v => v.id === id);
+                                    });
+                                    const otherSelectedValues = otherSelectedValueIds.map(valueId => {
+                                      const value = otherAttribute?.values.find(v => v.id === valueId);
+                                      return value ? {
+                                        id: value.id,
+                                        label: value.label,
+                                        value: value.value,
+                                        colorHex: otherIsColor ? (value.colors?.[0] || getColorHex(value.label)) : null,
+                                      } : null;
+                                    }).filter((v): v is NonNullable<typeof v> => v !== null);
+                                    
+                                    // Create unique key for this cell's dropdown
+                                    const cellDropdownKey = `${variant.id}-${attributeId}`;
+                                    
                                     return (
                                       <td key={attributeId} className="px-4 py-3 whitespace-nowrap">
-                                        <span className="text-sm text-gray-400">-</span>
+                                        <div className="relative" ref={(el) => { valueDropdownRefs.current[cellDropdownKey] = el; }}>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setOpenValueDropdown(openValueDropdown === cellDropdownKey ? null : cellDropdownKey);
+                                            }}
+                                            className="w-full text-left flex items-center gap-2 p-2 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                          >
+                                            <div className="flex-1 flex flex-wrap items-center gap-1 min-w-0">
+                                              {otherSelectedValues.length > 0 ? (
+                                                otherSelectedValues.map((val) => (
+                                                  <span
+                                                    key={val.id}
+                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm"
+                                                  >
+                                                    {otherIsColor && val.colorHex && (
+                                                      <span
+                                                        className="inline-block w-4 h-4 rounded-full border border-gray-300"
+                                                        style={{ backgroundColor: val.colorHex }}
+                                                      />
+                                                    )}
+                                                    {val.label}
+                                                  </span>
+                                                ))
+                                              ) : (
+                                                <span className="text-sm text-gray-400">-</span>
+                                              )}
+                                            </div>
+                                            <svg
+                                              className={`w-4 h-4 text-gray-400 transition-transform ${openValueDropdown === cellDropdownKey ? 'rotate-180' : ''}`}
+                                              fill="none"
+                                              stroke="currentColor"
+                                              viewBox="0 0 24 24"
+                                            >
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                          </button>
+                                          
+                                          {openValueDropdown === cellDropdownKey && otherAttribute && (
+                                            <div className="absolute z-50 mt-1 w-64 bg-white border border-gray-300 rounded-lg shadow-lg max-h-80 overflow-y-auto">
+                                              <div className="p-2">
+                                                {/* "All" option */}
+                                                <label className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-gray-50">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={otherAttribute.values.length > 0 && otherSelectedValueIds.length === otherAttribute.values.length}
+                                                    onChange={(e) => {
+                                                      if (e.target.checked) {
+                                                        // Select all values
+                                                        const allValueIds = otherAttribute.values.map(v => v.id);
+                                                        // Add to variant's selectedValueIds (merge with existing)
+                                                        const currentIds = variant.selectedValueIds;
+                                                        const newIds = [...new Set([...currentIds, ...allValueIds])];
+                                                        
+                                                        setSelectedAttributeValueIds(prev => ({
+                                                          ...prev,
+                                                          [attributeId]: allValueIds,
+                                                        }));
+                                                        
+                                                        // Update variant - merge with existing selectedValueIds
+                                                        setGeneratedVariants(prev => prev.map(v => 
+                                                          v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
+                                                        ));
+                                                      } else {
+                                                        // Deselect all values for this attribute
+                                                        const valueIdsToRemove = otherAttribute.values.map(v => v.id);
+                                                        const newIds = variant.selectedValueIds.filter(id => !valueIdsToRemove.includes(id));
+                                                        
+                                                        setSelectedAttributeValueIds(prev => ({
+                                                          ...prev,
+                                                          [attributeId]: prev[attributeId]?.filter(id => !valueIdsToRemove.includes(id)) || [],
+                                                        }));
+                                                        
+                                                        setGeneratedVariants(prev => prev.map(v => 
+                                                          v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
+                                                        ));
+                                                      }
+                                                    }}
+                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                  />
+                                                  <span className="text-sm font-medium text-gray-900">All</span>
+                                                </label>
+                                                
+                                                <div className="border-t border-gray-200 my-1"></div>
+                                                
+                                                {/* Individual value checkboxes */}
+                                                {otherAttribute.values.map((value) => {
+                                                  const isSelected = variant.selectedValueIds.includes(value.id);
+                                                  const valueColorHex = otherIsColor && value.colors && value.colors.length > 0 
+                                                    ? value.colors[0] 
+                                                    : otherIsColor 
+                                                      ? getColorHex(value.label) 
+                                                      : null;
+                                                  
+                                                  return (
+                                                    <label
+                                                      key={value.id}
+                                                      className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all ${
+                                                        isSelected
+                                                          ? 'bg-blue-50 border-2 border-blue-600'
+                                                          : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
+                                                      }`}
+                                                    >
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                          const currentIds = variant.selectedValueIds;
+                                                          let newIds: string[];
+                                                          
+                                                          if (e.target.checked) {
+                                                            // Add value if not already selected
+                                                            newIds = [...currentIds, value.id];
+                                                          } else {
+                                                            // Remove value
+                                                            newIds = currentIds.filter(id => id !== value.id);
+                                                          }
+                                                          
+                                                          // Update selectedAttributeValueIds for this attribute
+                                                          const currentAttrIds = selectedAttributeValueIds[attributeId] || [];
+                                                          let newAttrIds: string[];
+                                                          if (e.target.checked) {
+                                                            newAttrIds = [...currentAttrIds, value.id];
+                                                          } else {
+                                                            newAttrIds = currentAttrIds.filter(id => id !== value.id);
+                                                          }
+                                                          
+                                                          setSelectedAttributeValueIds(prev => ({
+                                                            ...prev,
+                                                            [attributeId]: newAttrIds,
+                                                          }));
+                                                          
+                                                          // Update variant
+                                                          setGeneratedVariants(prev => prev.map(v => 
+                                                            v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
+                                                          ));
+                                                        }}
+                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                      />
+                                                      {otherIsColor && valueColorHex && (
+                                                        <span
+                                                          className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm flex-shrink-0"
+                                                          style={{ backgroundColor: valueColorHex }}
+                                                        />
+                                                      )}
+                                                      <span className="text-sm text-gray-900 flex-1">{value.label}</span>
+                                                    </label>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
                                       </td>
                                     );
                                   })}
