@@ -199,27 +199,22 @@ function AddProductPageContent() {
   const [addingSize, setAddingSize] = useState(false);
   const [colorMessage, setColorMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [sizeMessage, setSizeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [selectedAttributeId, setSelectedAttributeId] = useState<string | null>(null);
-  const [newAttributeName, setNewAttributeName] = useState('');
-  const [addingAttribute, setAddingAttribute] = useState(false);
-  const [newAttributeValue, setNewAttributeValue] = useState('');
-  const [addingAttributeValue, setAddingAttributeValue] = useState(false);
-  const [deletingAttribute, setDeletingAttribute] = useState<string | null>(null);
-  const [deletingAttributeValue, setDeletingAttributeValue] = useState<string | null>(null);
+  // Track which attributes have been selected (have values added to them)
+  const [selectedAttributesForProduct, setSelectedAttributesForProduct] = useState<Set<string>>(new Set());
   
-  // Matrix Variant Builder state
-  const [matrixSelectedColors, setMatrixSelectedColors] = useState<string[]>([]); // Array of color values
-  const [matrixSelectedSizes, setMatrixSelectedSizes] = useState<string[]>([]); // Array of size values
-  const [matrixVariants, setMatrixVariants] = useState<Record<string, {
+  // New Multi-Attribute Variant Builder state
+  const [selectedAttributesForVariants, setSelectedAttributesForVariants] = useState<Set<string>>(new Set()); // Selected attribute IDs
+  const [selectedAttributeValueIds, setSelectedAttributeValueIds] = useState<Record<string, string[]>>({}); // Key: attributeId, Value: array of selected value IDs
+  const [generatedVariants, setGeneratedVariants] = useState<Array<{
+    id: string; // Unique ID for this variant combination
+    attributeValues: Array<{ attributeId: string; attributeKey: string; attributeName: string; valueId: string; value: string; label: string }>; // All attribute values for this variant
     price: string;
     compareAtPrice: string;
     stock: string;
     sku: string;
-    image: string | null; // Single image for this matrix cell
-  }>>({}); // Key: "colorValue-sizeValue", Value: variant data
-  const [useMatrixBuilder, setUseMatrixBuilder] = useState(false);
-  const matrixImageFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [matrixImageTarget, setMatrixImageTarget] = useState<string | null>(null); // Key of the matrix cell
+    image: string | null;
+  }>>([]);
+  const [useNewVariantBuilder, setUseNewVariantBuilder] = useState(false);
 
   useEffect(() => {
     if (!isLoading) {
@@ -714,138 +709,6 @@ function AddProductPageContent() {
             })),
           });
           
-          // Populate Matrix Builder with existing variant data
-          console.log('🔍 [ADMIN] Preparing Matrix Builder data:', {
-            hasColors: !!mergedVariant.colors,
-            colorsCount: mergedVariant.colors?.length || 0,
-            mergedVariant: mergedVariant,
-          });
-          
-          if (mergedVariant.colors && mergedVariant.colors.length > 0) {
-            const colors: string[] = [];
-            const sizes: string[] = [];
-            const matrixData: Record<string, {
-              price: string;
-              compareAtPrice: string;
-              stock: string;
-              sku: string;
-              image: string | null;
-            }> = {};
-            
-            mergedVariant.colors.forEach((colorData) => {
-              console.log('🎨 [ADMIN] Processing colorData:', {
-                colorValue: colorData.colorValue,
-                colorLabel: colorData.colorLabel,
-                sizes: colorData.sizes,
-                sizeStocks: colorData.sizeStocks,
-                sizePrices: colorData.sizePrices,
-                price: colorData.price,
-              });
-              // Add color to selected colors
-              if (colorData.colorValue && !colors.includes(colorData.colorValue)) {
-                colors.push(colorData.colorValue);
-              }
-              
-              // Add sizes to selected sizes
-              if (colorData.sizes && colorData.sizes.length > 0) {
-                colorData.sizes.forEach((size) => {
-                  if (!sizes.includes(size)) {
-                    sizes.push(size);
-                  }
-                });
-              }
-              
-              // Populate matrix data
-              if (colorData.sizes && colorData.sizes.length > 0) {
-                // Color with sizes - create matrix cells for each size
-                colorData.sizes.forEach((size) => {
-                  const key = `${colorData.colorValue}-${size}`;
-                  const sizePrice = colorData.sizePrices?.[size] || colorData.price || '';
-                  const sizeCompareAtPrice = colorData.sizeCompareAtPrices?.[size] || colorData.compareAtPrice || '';
-                  const sizeStock = colorData.sizeStocks?.[size] || '';
-                  const sizeSku = colorData.sizeLabels?.[size] || '';
-                  
-                  matrixData[key] = {
-                    price: sizePrice,
-                    compareAtPrice: sizeCompareAtPrice,
-                    stock: sizeStock,
-                    sku: sizeSku,
-                    image: colorData.images && colorData.images.length > 0 ? colorData.images[0] : null,
-                  };
-                });
-                
-                // Store color-level image (for color row)
-                if (colorData.images && colorData.images.length > 0) {
-                  matrixData[colorData.colorValue] = {
-                    price: colorData.price || '',
-                    compareAtPrice: colorData.compareAtPrice || '',
-                    stock: colorData.stock || '',
-                    sku: mergedVariant.sku || '',
-                    image: colorData.images[0],
-                  };
-                }
-              } else {
-                // Color without sizes
-                const key = colorData.colorValue;
-                matrixData[key] = {
-                  price: colorData.price || '',
-                  compareAtPrice: colorData.compareAtPrice || '',
-                  stock: colorData.stock || '',
-                  sku: mergedVariant.sku || '',
-                  image: colorData.images && colorData.images.length > 0 ? colorData.images[0] : null,
-                };
-              }
-            });
-            
-            // If only sizes (no colors)
-            if (colors.length === 0 && sizes.length > 0) {
-              // This case is handled differently - sizes without colors
-              mergedVariant.colors.forEach((colorData) => {
-                if (colorData.sizes && colorData.sizes.length > 0) {
-                  colorData.sizes.forEach((size) => {
-                    const sizePrice = colorData.sizePrices?.[size] || colorData.price || '';
-                    const sizeCompareAtPrice = colorData.sizeCompareAtPrices?.[size] || colorData.compareAtPrice || '';
-                    const sizeStock = colorData.sizeStocks?.[size] || '';
-                    const sizeSku = colorData.sizeLabels?.[size] || '';
-                    
-                    matrixData[size] = {
-                      price: sizePrice,
-                      compareAtPrice: sizeCompareAtPrice,
-                      stock: sizeStock,
-                      sku: sizeSku,
-                      image: colorData.images && colorData.images.length > 0 ? colorData.images[0] : null,
-                    };
-                  });
-                }
-              });
-            }
-            
-            // Update Matrix Builder state
-            console.log('📝 [ADMIN] Setting Matrix Builder state:', {
-              colors,
-              sizes,
-              matrixDataKeys: Object.keys(matrixData),
-              matrixData,
-            });
-            
-            setMatrixSelectedColors(colors);
-            setMatrixSelectedSizes(sizes);
-            setMatrixVariants(matrixData);
-            setUseMatrixBuilder(true);
-            
-            console.log('✅ [ADMIN] Matrix Builder populated with existing variant data:', {
-              colors: colors.length,
-              sizes: sizes.length,
-              matrixCells: Object.keys(matrixData).length,
-            });
-          } else {
-            console.warn('⚠️ [ADMIN] No colors found in mergedVariant, Matrix Builder will not be populated:', {
-              mergedVariant,
-              hasColors: !!mergedVariant.colors,
-              colorsLength: mergedVariant.colors?.length || 0,
-            });
-          }
-          
           // Reset new brand/category fields when loading existing product
           setUseNewBrand(false);
           setUseNewCategory(false);
@@ -874,6 +737,135 @@ function AddProductPageContent() {
       .replace(/[^\w\s-|]/g, '') // Allow pipe character (|) in slug
       .replace(/[\s_-]+/g, '-')
       .replace(/^-+|-+$/g, '');
+  };
+
+  // Generate all combinations of selected attribute values
+  const generateAttributeCombinations = (attributeValueGroups: string[][]): string[][] => {
+    if (attributeValueGroups.length === 0) {
+      return [[]];
+    }
+    if (attributeValueGroups.length === 1) {
+      return attributeValueGroups[0].map((value) => [value]);
+    }
+    const [firstGroup, ...restGroups] = attributeValueGroups;
+    const restCombinations = generateAttributeCombinations(restGroups);
+    const result: string[][] = [];
+    for (const value of firstGroup) {
+      for (const combination of restCombinations) {
+        result.push([value, ...combination]);
+      }
+    }
+    return result;
+  };
+
+  // Generate variants from selected attributes
+  const generateVariantsFromAttributes = () => {
+    console.log('🚀 [VARIANT BUILDER] Generating variants from attributes...');
+    
+    const selectedAttrs = Array.from(selectedAttributesForVariants);
+    if (selectedAttrs.length === 0) {
+      console.log('⚠️ [VARIANT BUILDER] No attributes selected');
+      setGeneratedVariants([]);
+      return;
+    }
+
+    // Get all selected value IDs for each attribute
+    const attributeValueGroups: string[][] = [];
+    const attributeMetadata: Array<{ attributeId: string; attributeKey: string; attributeName: string }> = [];
+    
+    selectedAttrs.forEach((attributeId) => {
+      const attribute = attributes.find(a => a.id === attributeId);
+      if (!attribute) return;
+      
+      const selectedValueIds = selectedAttributeValueIds[attributeId] || [];
+      if (selectedValueIds.length === 0) return;
+      
+      attributeValueGroups.push(selectedValueIds);
+      attributeMetadata.push({
+        attributeId: attribute.id,
+        attributeKey: attribute.key,
+        attributeName: attribute.name,
+      });
+    });
+
+    if (attributeValueGroups.length === 0) {
+      console.log('⚠️ [VARIANT BUILDER] No attribute values selected');
+      setGeneratedVariants([]);
+      return;
+    }
+
+    // Generate all combinations
+    const combinations = generateAttributeCombinations(attributeValueGroups);
+    console.log(`✅ [VARIANT BUILDER] Generated ${combinations.length} variant combinations`);
+
+    // Create variant objects
+    const variants = combinations.map((combination, index) => {
+      const attributeValues: Array<{ attributeId: string; attributeKey: string; attributeName: string; valueId: string; value: string; label: string }> = [];
+      
+      combination.forEach((valueId, attrIndex) => {
+        const attrMeta = attributeMetadata[attrIndex];
+        const attribute = attributes.find(a => a.id === attrMeta.attributeId);
+        const value = attribute?.values.find(v => v.id === valueId);
+        
+        if (value && attrMeta) {
+          attributeValues.push({
+            attributeId: attrMeta.attributeId,
+            attributeKey: attrMeta.attributeKey,
+            attributeName: attrMeta.attributeName,
+            valueId: value.id,
+            value: value.value,
+            label: value.label,
+          });
+        }
+      });
+
+      // Generate unique ID for this variant combination
+      const variantId = combination.join('-');
+      
+      // Generate SKU
+      const baseSlug = formData.slug || generateSlug(formData.title) || 'PROD';
+      const skuParts = attributeValues.map(av => av.value.toUpperCase().replace(/\s+/g, '-'));
+      const sku = `${baseSlug.toUpperCase()}-${skuParts.join('-')}`;
+
+      return {
+        id: variantId,
+        attributeValues,
+        price: '',
+        compareAtPrice: '',
+        stock: '',
+        sku,
+        image: null,
+      };
+    });
+
+    setGeneratedVariants(variants);
+    console.log('✅ [VARIANT BUILDER] Variants generated:', variants.length);
+  };
+
+  // Update variants when attributes or values change
+  useEffect(() => {
+    if (useNewVariantBuilder && selectedAttributesForVariants.size > 0) {
+      // Check if at least one attribute has selected values
+      const hasSelectedValues = Array.from(selectedAttributesForVariants).some(attrId => {
+        const selectedIds = selectedAttributeValueIds[attrId] || [];
+        return selectedIds.length > 0;
+      });
+      
+      if (hasSelectedValues) {
+        generateVariantsFromAttributes();
+      } else {
+        setGeneratedVariants([]);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAttributesForVariants, selectedAttributeValueIds, useNewVariantBuilder, attributes, formData.slug, formData.title]);
+
+  // Apply value to all variants
+  const applyToAllVariants = (field: 'price' | 'compareAtPrice' | 'stock' | 'sku', value: string) => {
+    setGeneratedVariants(prev => prev.map(variant => ({
+      ...variant,
+      [field]: value,
+    })));
   };
 
   /**
@@ -1488,79 +1480,6 @@ function AddProductPageContent() {
     }
   };
 
-  // Upload image for a specific matrix cell (single image only)
-  const handleUploadMatrixImages = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length || !matrixImageTarget) {
-      console.log('⚠️ [ADMIN] No files or no matrix target:', { filesLength: files.length, matrixImageTarget });
-      if (event.target) {
-        event.target.value = '';
-      }
-      return;
-    }
-
-    const imageFile = files.find((file) => file.type.startsWith('image/'));
-    if (!imageFile) {
-      alert('Please select an image file');
-      if (event.target) {
-        event.target.value = '';
-      }
-      return;
-    }
-
-    try {
-      setImageUploadLoading(true);
-      console.log('📤 [ADMIN] Starting upload for matrix cell:', matrixImageTarget);
-      
-      const uploadedImage = await fileToBase64(imageFile);
-      console.log('✅ [ADMIN] Image converted to base64, length:', uploadedImage.length);
-
-      console.log('📥 [ADMIN] Image converted, adding to matrix cell:', {
-        cellKey: matrixImageTarget
-      });
-      
-      setMatrixVariants((prev) => {
-        // When colors and sizes both exist, store image with colorValue key (row-based)
-        // Otherwise, store with the provided key (cell-based or single)
-        const currentVariant = prev[matrixImageTarget] || { price: '', compareAtPrice: '', stock: '', sku: '', image: null };
-        
-        return {
-          ...prev,
-          [matrixImageTarget]: {
-            ...currentVariant,
-            image: uploadedImage
-          }
-        };
-      });
-      
-      console.log('✅ [ADMIN] Matrix image added to state');
-    } catch (error: any) {
-      console.error('❌ [ADMIN] Error uploading matrix image:', error);
-      alert(error?.message || t('admin.products.add.failedToProcessImage'));
-    } finally {
-      setImageUploadLoading(false);
-      if (event.target) {
-        event.target.value = '';
-      }
-      setMatrixImageTarget(null);
-    }
-  };
-
-  // Remove image from a specific matrix cell
-  const removeMatrixImage = (cellKey: string) => {
-    setMatrixVariants((prev) => {
-      const currentVariant = prev[cellKey] || { price: '', compareAtPrice: '', stock: '', sku: '', image: null };
-      
-      return {
-        ...prev,
-        [cellKey]: {
-          ...currentVariant,
-          image: null
-        }
-      };
-    });
-  };
-
   // Label management functions
   const addLabel = () => {
     const newLabel: ProductLabel = {
@@ -1768,16 +1687,123 @@ function AddProductPageContent() {
         }
       }
 
+      // Convert new variant builder variants to formData.variants if using new builder
+      if (useNewVariantBuilder && generatedVariants.length > 0) {
+        console.log('🔄 [ADMIN] Converting new variant builder variants to formData format...');
+        
+        // Group variants by color (if color attribute exists)
+        const colorAttribute = attributes.find(a => a.key === 'color');
+        const colorAttributeId = colorAttribute?.id;
+        
+        if (colorAttributeId && selectedAttributesForVariants.has(colorAttributeId)) {
+          // Group by color
+          const variantsByColor = new Map<string, typeof generatedVariants>();
+          
+          generatedVariants.forEach((variant) => {
+            const colorValue = variant.attributeValues.find(av => av.attributeId === colorAttributeId);
+            if (colorValue) {
+              const colorKey = colorValue.value;
+              if (!variantsByColor.has(colorKey)) {
+                variantsByColor.set(colorKey, []);
+              }
+              variantsByColor.get(colorKey)!.push(variant);
+            }
+          });
+          
+          // Convert to formData.variants format
+          const newVariants: Variant[] = [];
+          variantsByColor.forEach((colorVariants, colorValue) => {
+            const colorAttributeValue = colorAttribute.values.find(v => v.value === colorValue);
+            const colorLabel = colorAttributeValue?.label || colorValue;
+            const colorData: ColorData = {
+              colorValue,
+              colorLabel,
+              images: [],
+              stock: '',
+              sizes: [],
+              sizeStocks: {},
+            };
+            
+            // Check if any variant has size
+            const sizeAttribute = attributes.find(a => a.key === 'size');
+            const hasSizes = sizeAttribute && selectedAttributesForVariants.has(sizeAttribute.id);
+            
+            if (hasSizes) {
+              colorVariants.forEach((variant) => {
+                const sizeValue = variant.attributeValues.find(av => av.attributeId === sizeAttribute!.id);
+                if (sizeValue) {
+                  if (!colorData.sizes.includes(sizeValue.value)) {
+                    colorData.sizes.push(sizeValue.value);
+                  }
+                  colorData.sizeStocks[sizeValue.value] = variant.stock || '0';
+                  if (!colorData.sizePrices) colorData.sizePrices = {};
+                  colorData.sizePrices[sizeValue.value] = variant.price || '0';
+                }
+              });
+            } else {
+              // No sizes, use first variant's stock
+              if (colorVariants.length > 0) {
+                colorData.stock = colorVariants[0].stock || '0';
+                if (colorVariants[0].price) {
+                  colorData.price = colorVariants[0].price;
+                }
+              }
+            }
+            
+            newVariants.push({
+              id: `variant-${Date.now()}-${Math.random()}`,
+              price: colorVariants[0]?.price || '0',
+              compareAtPrice: colorVariants[0]?.compareAtPrice || '',
+              sku: colorVariants[0]?.sku || '',
+              colors: [colorData],
+            });
+          });
+          
+          formData.variants = newVariants;
+        } else {
+          // No color attribute, create single variant or group by first attribute
+          const firstAttributeId = Array.from(selectedAttributesForVariants)[0];
+          if (firstAttributeId) {
+            const variantsByFirstAttr = new Map<string, typeof generatedVariants>();
+            
+            generatedVariants.forEach((variant) => {
+              const firstValue = variant.attributeValues.find(av => av.attributeId === firstAttributeId);
+              if (firstValue) {
+                const key = firstValue.value;
+                if (!variantsByFirstAttr.has(key)) {
+                  variantsByFirstAttr.set(key, []);
+                }
+                variantsByFirstAttr.get(key)!.push(variant);
+              }
+            });
+            
+            // For simplicity, create one variant with all combinations
+            // This is a simplified version - you may want to enhance this
+            const newVariants: Variant[] = [{
+              id: `variant-${Date.now()}`,
+              price: generatedVariants[0]?.price || '0',
+              compareAtPrice: generatedVariants[0]?.compareAtPrice || '',
+              sku: generatedVariants[0]?.sku || '',
+              colors: [],
+            }];
+            
+            formData.variants = newVariants;
+          }
+        }
+        
+        console.log('✅ [ADMIN] Converted variants:', formData.variants.length);
+      }
+
       // Validate that at least one variant exists
       console.log('🔍 [ADMIN] Validating variants before submit:', {
         variantsCount: formData.variants.length,
         variants: formData.variants,
-        useMatrixBuilder,
+        useNewVariantBuilder,
       });
       
       if (formData.variants.length === 0) {
-        if (useMatrixBuilder) {
-          alert(t('admin.products.add.pleaseUseGenerateVariants'));
+        if (useNewVariantBuilder) {
+          alert(t('admin.products.add.pleaseGenerateVariants') || 'Please generate variants using the variant builder');
         } else {
           alert(t('admin.products.add.pleaseAddAtLeastOneVariant'));
         }
@@ -2217,114 +2243,6 @@ function AddProductPageContent() {
     return null;
   }
 
-
-  // Create new attribute
-  const handleCreateAttribute = async () => {
-    if (!newAttributeName.trim()) {
-      alert(t('admin.products.add.attributeNameRequired'));
-      return;
-    }
-
-    // Auto-generate key from name (lowercase, replace spaces with hyphens)
-    const autoKey = newAttributeName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-
-    try {
-      setAddingAttribute(true);
-      const response = await apiClient.post<{ data: Attribute }>('/api/v1/admin/attributes', {
-        name: newAttributeName.trim(),
-        key: autoKey,
-        type: 'select',
-        filterable: true,
-        locale: 'en',
-      });
-
-      if (response.data) {
-        setAttributes((prev) => [...prev, response.data]);
-        setNewAttributeName('');
-        setSelectedAttributeId(response.data.id);
-        setAddingAttribute(false);
-      }
-    } catch (err: any) {
-      alert(err.message || t('admin.products.add.failedToCreateAttribute'));
-      setAddingAttribute(false);
-    }
-  };
-
-  // Add attribute value
-  const handleAddAttributeValue = async () => {
-    if (!selectedAttributeId || !newAttributeValue.trim()) {
-      alert(t('admin.products.add.selectAttributeAndEnterValue'));
-      return;
-    }
-
-    try {
-      setAddingAttributeValue(true);
-      const response = await apiClient.post<{ data: Attribute }>(
-        `/api/v1/admin/attributes/${selectedAttributeId}/values`,
-        {
-          label: newAttributeValue.trim(),
-          locale: 'en',
-        }
-      );
-
-      if (response.data) {
-        setAttributes((prev) =>
-          prev.map((attr) => (attr.id === selectedAttributeId ? response.data : attr))
-        );
-        setNewAttributeValue('');
-        setAddingAttributeValue(false);
-      }
-    } catch (err: any) {
-      alert(err.message || t('admin.products.add.failedToAddAttributeValue'));
-      setAddingAttributeValue(false);
-    }
-  };
-
-  // Delete attribute
-  const handleDeleteAttribute = async (attributeId: string) => {
-    if (!confirm(t('admin.products.add.deleteAttributeConfirm'))) {
-      return;
-    }
-
-    try {
-      setDeletingAttribute(attributeId);
-      await apiClient.delete(`/api/v1/admin/attributes/${attributeId}`);
-      setAttributes((prev) => prev.filter((attr) => attr.id !== attributeId));
-      if (selectedAttributeId === attributeId) {
-        setSelectedAttributeId(null);
-      }
-      setDeletingAttribute(null);
-    } catch (err: any) {
-      alert(err?.data?.detail || err.message || t('admin.products.add.failedToDeleteAttribute'));
-      setDeletingAttribute(null);
-    }
-  };
-
-  // Delete attribute value
-  const handleDeleteAttributeValue = async (valueId: string) => {
-    if (!selectedAttributeId) return;
-
-    if (!confirm(t('admin.products.add.deleteValueConfirm'))) {
-      return;
-    }
-
-    try {
-      setDeletingAttributeValue(valueId);
-      const response = await apiClient.delete<{ data: Attribute }>(
-        `/api/v1/admin/attributes/${selectedAttributeId}/values/${valueId}`
-      );
-
-      if (response.data) {
-        setAttributes((prev) =>
-          prev.map((attr) => (attr.id === selectedAttributeId ? response.data : attr))
-        );
-        setDeletingAttributeValue(null);
-      }
-    } catch (err: any) {
-      alert(err?.data?.detail || err.message || t('admin.products.add.failedToDeleteAttributeValue'));
-      setDeletingAttributeValue(null);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -2841,127 +2759,8 @@ function AddProductPageContent() {
               )}
             </div>
 
-            {/* Attributes Section */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.attributes')}</h2>
-              </div>
-              
-              <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
-                {/* Select/Create Attribute */}
-                <div className="space-y-3">
-                  <label className="text-sm font-medium text-gray-700">{t('admin.products.add.selectAttribute')}</label>
-                  <select
-                    value={selectedAttributeId || ''}
-                    onChange={(e) => setSelectedAttributeId(e.target.value || null)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">{t('admin.products.add.selectAttributeOption')}</option>
-                    {attributes.map((attr) => (
-                      <option key={attr.id} value={attr.id}>
-                        {attr.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Create New Attribute */}
-                  <div className="space-y-2 pt-2 border-t">
-                    <label className="text-sm font-medium text-gray-700">{t('admin.products.add.createNewAttribute')}</label>
-                    <Input
-                      type="text"
-                      value={newAttributeName}
-                      onChange={(e) => setNewAttributeName(e.target.value)}
-                      placeholder={t('admin.products.add.attributeNamePlaceholder')}
-                      className="w-full"
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleCreateAttribute();
-                        }
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleCreateAttribute}
-                      disabled={addingAttribute || !newAttributeName.trim()}
-                      className="w-full"
-                    >
-                      {addingAttribute ? t('admin.products.add.creating') : t('admin.products.add.createAttribute')}
-                    </Button>
-                    {newAttributeName.trim() && (
-                      <p className="text-xs text-gray-500">
-                        {t('admin.products.add.keyAutoGenerated')} <span className="font-mono">{newAttributeName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}</span>
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Add Attribute Value */}
-                  {selectedAttributeId && (
-                    <div className="space-y-2 pt-2 border-t">
-                      <label className="text-sm font-medium text-gray-700">
-                        {t('admin.products.add.addValueTo').replace('{name}', attributes.find((a) => a.id === selectedAttributeId)?.name || '')}:
-                      </label>
-                      <div className="flex gap-2">
-                        <Input
-                          type="text"
-                          value={newAttributeValue}
-                          onChange={(e) => setNewAttributeValue(e.target.value)}
-                          placeholder={t('admin.products.add.attributeValuePlaceholder')}
-                          className="flex-1"
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddAttributeValue();
-                            }
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={handleAddAttributeValue}
-                          disabled={addingAttributeValue || !newAttributeValue.trim()}
-                        >
-                          {addingAttributeValue ? t('admin.products.add.adding') : '+'}
-                        </Button>
-                      </div>
-
-                      {/* Show existing values */}
-                      <div className="space-y-1 max-h-48 overflow-y-auto">
-                        {attributes
-                          .find((a) => a.id === selectedAttributeId)
-                          ?.values.map((val) => (
-                            <div
-                              key={val.id}
-                              className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-md group"
-                            >
-                              <span className="text-sm text-gray-700">{val.label}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteAttributeValue(val.id)}
-                                disabled={deletingAttributeValue === val.id}
-                                className="text-red-600 hover:text-red-800 disabled:opacity-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                                title={t('admin.products.add.deleteValue')}
-                              >
-                                {deletingAttributeValue === val.id ? (
-                                  <div className="w-3 h-3 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                )}
-                              </button>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
             {/* Product Variants Display */}
-            {!useMatrixBuilder && formData.variants.length > 0 && (
+            {formData.variants.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.productVariants')}</h2>
@@ -3085,161 +2884,156 @@ function AddProductPageContent() {
               </div>
             )}
 
-            {/* Matrix Variant Builder */}
+            {/* New Multi-Attribute Variant Builder */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.variantBuilder')}</h2>
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={useMatrixBuilder}
-                      onChange={(e) => {
-                        setUseMatrixBuilder(e.target.checked);
-                        if (!e.target.checked) {
-                          // Clear matrix data when disabling
-                          setMatrixSelectedColors([]);
-                          setMatrixSelectedSizes([]);
-                          setMatrixVariants({});
-                        }
-                      }}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">{t('admin.products.add.useMatrixBuilder')}</span>
-                  </label>
-                </div>
+                <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.variantBuilder') || 'Variant Builder'}</h2>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useNewVariantBuilder}
+                    onChange={(e) => {
+                      setUseNewVariantBuilder(e.target.checked);
+                      if (!e.target.checked) {
+                        setSelectedAttributesForVariants(new Set());
+                        setSelectedAttributeValueIds({});
+                        setGeneratedVariants([]);
+                      }
+                    }}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">{t('admin.products.add.useNewVariantBuilder') || 'Use Variant Builder'}</span>
+                </label>
               </div>
 
-              {useMatrixBuilder ? (
+              {useNewVariantBuilder && (
                 <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
-                  {/* Select Colors and Sizes */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Colors Selection */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-3">
-                        {t('admin.products.add.selectColors')}
-                      </label>
-                      {colorAttribute && colorAttribute.values && colorAttribute.values.length > 0 ? (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto">
-                          {colorAttribute.values.map((val) => {
-                            const isSelected = matrixSelectedColors.includes(val.value);
-                            const colorHex = getColorHex(val.label);
-                            return (
-                              <label
-                                key={val.id}
-                                className={`flex flex-col items-center justify-center cursor-pointer p-2 rounded-lg border-2 transition-all ${
-                                  isSelected 
-                                    ? 'bg-blue-50 border-blue-600 shadow-md' 
-                                    : 'bg-white border-gray-300 hover:bg-gray-50'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setMatrixSelectedColors([...matrixSelectedColors, val.value]);
-                                    } else {
-                                      setMatrixSelectedColors(matrixSelectedColors.filter(c => c !== val.value));
-                                      // Remove variants for this color
-                                      const newMatrixVariants = { ...matrixVariants };
-                                      matrixSelectedSizes.forEach(size => {
-                                        delete newMatrixVariants[`${val.value}-${size}`];
-                                      });
-                                      setMatrixVariants(newMatrixVariants);
-                                    }
-                                  }}
-                                  className="sr-only"
-                                />
-                                <span
-                                  className="inline-block w-8 h-8 rounded-full border-2 border-gray-300 mb-1 shadow-inner"
-                                  style={{ backgroundColor: colorHex }}
-                                />
-                                <span className={`text-xs font-medium text-center truncate w-full ${
-                                  isSelected ? 'text-blue-900' : 'text-gray-800'
-                                }`}>
-                                  {val.label}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center text-gray-500 text-sm">
-                          {t('admin.products.add.noColorsAvailable')}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Sizes Selection */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-3">
-                        {isClothingCategory() ? t('admin.products.add.selectSizes') + ' *' : t('admin.products.add.selectSizesOptional')}
-                      </label>
-                      {sizeAttribute && sizeAttribute.values && sizeAttribute.values.length > 0 ? (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 p-4 border-2 border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto">
-                          {sizeAttribute.values.map((val) => {
-                            const isSelected = matrixSelectedSizes.includes(val.value);
-                            return (
-                              <label
-                                key={val.id}
-                                className={`flex items-center justify-center cursor-pointer p-3 rounded-lg border-2 transition-all ${
-                                  isSelected 
-                                    ? 'bg-blue-50 border-blue-600 shadow-md' 
-                                    : 'bg-white border-gray-300 hover:bg-gray-50'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setMatrixSelectedSizes([...matrixSelectedSizes, val.value]);
-                                    } else {
-                                      setMatrixSelectedSizes(matrixSelectedSizes.filter(s => s !== val.value));
-                                      // Remove variants for this size
-                                      const newMatrixVariants = { ...matrixVariants };
-                                      matrixSelectedColors.forEach(color => {
-                                        delete newMatrixVariants[`${color}-${val.value}`];
-                                      });
-                                      setMatrixVariants(newMatrixVariants);
-                                    }
-                                  }}
-                                  className="sr-only"
-                                />
-                                <span className={`text-sm font-semibold ${
-                                  isSelected ? 'text-blue-900' : 'text-gray-800'
-                                }`}>
-                                  {val.label}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center text-gray-500 text-sm">
-                          {isClothingCategory() 
-                            ? t('admin.products.add.noSizesAvailable')
-                            : t('admin.products.add.noSizesAvailableOptional')}
-                        </div>
-                      )}
+                  {/* Step 1: Select Attributes */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      {t('admin.products.add.selectAttributes') || '1. Select Attributes'}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {attributes.map((attribute) => (
+                        <label
+                          key={attribute.id}
+                          className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            selectedAttributesForVariants.has(attribute.id)
+                              ? 'bg-blue-50 border-blue-600 shadow-md'
+                              : 'bg-white border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedAttributesForVariants.has(attribute.id)}
+                            onChange={(e) => {
+                              const newSet = new Set(selectedAttributesForVariants);
+                              if (e.target.checked) {
+                                newSet.add(attribute.id);
+                              } else {
+                                newSet.delete(attribute.id);
+                                // Remove selected values for this attribute
+                                const newValueIds = { ...selectedAttributeValueIds };
+                                delete newValueIds[attribute.id];
+                                setSelectedAttributeValueIds(newValueIds);
+                              }
+                              setSelectedAttributesForVariants(newSet);
+                            }}
+                            className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">{attribute.name}</div>
+                            <div className="text-xs text-gray-500">{attribute.key}</div>
+                          </div>
+                        </label>
+                      ))}
                     </div>
                   </div>
 
-                  {/* Matrix Table */}
-                  {((matrixSelectedColors.length > 0 || matrixSelectedSizes.length > 0) || (!isClothingCategory() && matrixSelectedColors.length === 0 && matrixSelectedSizes.length === 0)) ? (
-                    <div className="mt-6">
+                  {/* Step 2: Select Values for Each Attribute */}
+                  {selectedAttributesForVariants.size > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {t('admin.products.add.selectAttributeValues') || '2. Select Values for Each Attribute'}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {Array.from(selectedAttributesForVariants).map((attributeId) => {
+                          const attribute = attributes.find(a => a.id === attributeId);
+                          if (!attribute) return null;
+                          
+                          const selectedValueIds = selectedAttributeValueIds[attributeId] || [];
+                          
+                          return (
+                            <div key={attributeId} className="border border-gray-200 rounded-lg p-4">
+                              <h4 className="font-semibold text-gray-900 mb-3">{attribute.name}</h4>
+                              <div className="space-y-2 max-h-64 overflow-y-auto">
+                                {attribute.values && attribute.values.length > 0 ? (
+                                  attribute.values.map((value) => {
+                                    const isSelected = selectedValueIds.includes(value.id);
+                                    const isColor = attribute.key === 'color';
+                                    const colorHex = isColor && value.colors && value.colors.length > 0 
+                                      ? value.colors[0] 
+                                      : isColor 
+                                        ? getColorHex(value.label) 
+                                        : null;
+                                    
+                                    return (
+                                      <label
+                                        key={value.id}
+                                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all ${
+                                          isSelected
+                                            ? 'bg-blue-50 border-2 border-blue-600'
+                                            : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            const currentIds = selectedAttributeValueIds[attributeId] || [];
+                                            if (e.target.checked) {
+                                              setSelectedAttributeValueIds({
+                                                ...selectedAttributeValueIds,
+                                                [attributeId]: [...currentIds, value.id],
+                                              });
+                                            } else {
+                                              setSelectedAttributeValueIds({
+                                                ...selectedAttributeValueIds,
+                                                [attributeId]: currentIds.filter(id => id !== value.id),
+                                              });
+                                            }
+                                          }}
+                                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        {isColor && colorHex && (
+                                          <span
+                                            className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm flex-shrink-0"
+                                            style={{ backgroundColor: colorHex }}
+                                          />
+                                        )}
+                                        <span className="text-sm text-gray-900 flex-1">{value.label}</span>
+                                      </label>
+                                    );
+                                  })
+                                ) : (
+                                  <p className="text-sm text-gray-500 text-center py-4">
+                                    {t('admin.products.add.noValuesAvailable') || 'No values available'}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3: Generated Variants Table */}
+                  {generatedVariants.length > 0 && (
+                    <div>
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-gray-900">
-                          {t('admin.products.add.variantMatrix')} {
-                            matrixSelectedColors.length > 0 && matrixSelectedSizes.length > 0
-                              ? t('admin.products.add.variantMatrixColorsSizes').replace('{colors}', matrixSelectedColors.length.toString()).replace('{sizes}', matrixSelectedSizes.length.toString())
-                              : matrixSelectedColors.length > 0
-                              ? t('admin.products.add.variantMatrixColors').replace('{count}', matrixSelectedColors.length.toString())
-                              : matrixSelectedSizes.length > 0
-                              ? t('admin.products.add.variantMatrixSizes').replace('{count}', matrixSelectedSizes.length.toString())
-                              : t('admin.products.add.singleVariant')
-                          }
+                          {t('admin.products.add.generatedVariants') || '3. Generated Variants'} ({generatedVariants.length})
                         </h3>
                         <div className="flex gap-2">
                           <Button
@@ -3247,118 +3041,45 @@ function AddProductPageContent() {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              // Generate SKU for all variants
-                              const baseSlug = formData.slug || generateSlug(formData.title) || 'PROD';
-                              const newMatrixVariants = { ...matrixVariants };
-                              
-                              if (matrixSelectedColors.length > 0) {
-                                matrixSelectedColors.forEach((colorValue) => {
-                                  if (matrixSelectedSizes.length > 0) {
-                                    matrixSelectedSizes.forEach((sizeValue) => {
-                                      const key = `${colorValue}-${sizeValue}`;
-                                      const currentVariant = newMatrixVariants[key] || { price: '', compareAtPrice: '', stock: '', sku: '', image: null };
-                                      newMatrixVariants[key] = {
-                                        ...currentVariant,
-                                        sku: `${baseSlug.toUpperCase()}-${colorValue.toUpperCase()}-${sizeValue.toUpperCase()}`,
-                                      };
-                                    });
-                                  } else {
-                                    const key = colorValue;
-                                    const currentVariant = newMatrixVariants[key] || { price: '', compareAtPrice: '', stock: '', sku: '', image: null };
-                                    newMatrixVariants[key] = {
-                                      ...currentVariant,
-                                      sku: `${baseSlug.toUpperCase()}-${colorValue.toUpperCase()}`,
-                                    };
-                                  }
-                                });
-                              } else if (matrixSelectedSizes.length > 0) {
-                                // Only sizes, no colors
-                                matrixSelectedSizes.forEach((sizeValue) => {
-                                  const key = sizeValue;
-                                  const currentVariant = newMatrixVariants[key] || { price: '', compareAtPrice: '', stock: '', sku: '', image: null };
-                                  newMatrixVariants[key] = {
-                                    ...currentVariant,
-                                    sku: `${baseSlug.toUpperCase()}-${sizeValue.toUpperCase()}`,
-                                  };
-                                });
-                              } else {
-                                // Single variant
-                                const currentVariant = newMatrixVariants['single'] || { price: '', compareAtPrice: '', stock: '', sku: '', image: null };
-                                newMatrixVariants['single'] = {
-                                  ...currentVariant,
-                                  sku: baseSlug.toUpperCase(),
-                                };
+                              const price = prompt(t('admin.products.add.enterDefaultPrice') || 'Enter default price:');
+                              if (price !== null) {
+                                applyToAllVariants('price', price);
                               }
-                              setMatrixVariants(newMatrixVariants);
                             }}
                           >
-                            {t('admin.products.add.generateSku')}
+                            {t('admin.products.add.applyPriceToAll') || 'Apply Price to All'}
                           </Button>
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                            // Bulk fill all variants with same values
-                            const defaultPrice = prompt(t('admin.products.add.enterDefaultPrice')) || '';
-                            const defaultStock = prompt(t('admin.products.add.enterDefaultStock')) || '';
-                            const defaultSku = prompt(t('admin.products.add.enterSkuPrefix')) || '';
-                            
-                            if (defaultPrice || defaultStock || defaultSku) {
-                              const newMatrixVariants = { ...matrixVariants };
-                              
-                              if (matrixSelectedColors.length > 0) {
-                                matrixSelectedColors.forEach((colorValue) => {
-                                  if (matrixSelectedSizes.length > 0) {
-                                    matrixSelectedSizes.forEach((sizeValue) => {
-                                      const key = `${colorValue}-${sizeValue}`;
-                                      newMatrixVariants[key] = {
-                                        price: defaultPrice || newMatrixVariants[key]?.price || '',
-                                        compareAtPrice: newMatrixVariants[key]?.compareAtPrice || '',
-                                        stock: defaultStock || newMatrixVariants[key]?.stock || '',
-                                        sku: defaultSku ? `${defaultSku}-${colorValue}-${sizeValue}` : (newMatrixVariants[key]?.sku || ''),
-                                        image: newMatrixVariants[key]?.image || null,
-                                      };
-                                    });
-                                  } else {
-                                    const key = colorValue;
-                                    newMatrixVariants[key] = {
-                                      price: defaultPrice || newMatrixVariants[key]?.price || '',
-                                      compareAtPrice: newMatrixVariants[key]?.compareAtPrice || '',
-                                      stock: defaultStock || newMatrixVariants[key]?.stock || '',
-                                      sku: defaultSku ? `${defaultSku}-${colorValue}` : (newMatrixVariants[key]?.sku || ''),
-                                      image: newMatrixVariants[key]?.image || null,
-                                    };
-                                  }
-                                });
-                              } else if (matrixSelectedSizes.length > 0) {
-                                // Only sizes, no colors
-                                matrixSelectedSizes.forEach((sizeValue) => {
-                                  const key = sizeValue;
-                                  newMatrixVariants[key] = {
-                                    price: defaultPrice || newMatrixVariants[key]?.price || '',
-                                    compareAtPrice: newMatrixVariants[key]?.compareAtPrice || '',
-                                    stock: defaultStock || newMatrixVariants[key]?.stock || '',
-                                    sku: defaultSku ? `${defaultSku}-${sizeValue}` : (newMatrixVariants[key]?.sku || ''),
-                                    image: newMatrixVariants[key]?.image || null,
-                                  };
-                                });
-                              } else {
-                                // Single variant
-                                newMatrixVariants['single'] = {
-                                  price: defaultPrice || newMatrixVariants['single']?.price || '',
-                                  compareAtPrice: newMatrixVariants['single']?.compareAtPrice || '',
-                                  stock: defaultStock || newMatrixVariants['single']?.stock || '',
-                                  sku: defaultSku || (newMatrixVariants['single']?.sku || ''),
-                                  image: newMatrixVariants['single']?.image || null,
-                                };
+                              const stock = prompt(t('admin.products.add.enterDefaultStock') || 'Enter default stock:');
+                              if (stock !== null) {
+                                applyToAllVariants('stock', stock);
                               }
-                              setMatrixVariants(newMatrixVariants);
-                            }
-                          }}
-                        >
-                          {t('admin.products.add.bulkFill')}
-                        </Button>
+                            }}
+                          >
+                            {t('admin.products.add.applyStockToAll') || 'Apply Stock to All'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const skuPrefix = prompt(t('admin.products.add.enterSkuPrefix') || 'Enter SKU prefix:');
+                              if (skuPrefix !== null) {
+                                const baseSlug = formData.slug || generateSlug(formData.title) || 'PROD';
+                                generatedVariants.forEach((variant, index) => {
+                                  const skuParts = variant.attributeValues.map(av => av.value.toUpperCase().replace(/\s+/g, '-'));
+                                  const sku = skuPrefix ? `${skuPrefix}-${skuParts.join('-')}` : `${baseSlug.toUpperCase()}-${index + 1}`;
+                                  applyToAllVariants('sku', sku);
+                                });
+                              }
+                            }}
+                          >
+                            {t('admin.products.add.applySkuToAll') || 'Apply SKU Pattern to All'}
+                          </Button>
                         </div>
                       </div>
 
@@ -3366,495 +3087,113 @@ function AddProductPageContent() {
                         <table className="min-w-full divide-y divide-gray-200 bg-white">
                           <thead className="bg-gray-50">
                             <tr>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10 border-r">
-                                {matrixSelectedColors.length > 0 ? t('admin.products.add.colorSize') : matrixSelectedSizes.length > 0 ? t('admin.products.add.size') : t('admin.products.add.variant')}
+                              {Array.from(selectedAttributesForVariants).map((attributeId) => {
+                                const attribute = attributes.find(a => a.id === attributeId);
+                                return attribute ? (
+                                  <th key={attributeId} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    {attribute.name}
+                                  </th>
+                                ) : null;
+                              })}
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                {t('admin.products.add.price')}
                               </th>
-                              {matrixSelectedSizes.length > 0 ? (
-                                matrixSelectedSizes.map((sizeValue) => {
-                                  const sizeLabel = getSizeAttribute()?.values.find(v => v.value === sizeValue)?.label || sizeValue;
-                                  return (
-                                    <th key={sizeValue} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r last:border-r-0">
-                                      {sizeLabel}
-                                    </th>
-                                  );
-                                })
-                              ) : (
-                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  {t('admin.products.add.variant')}
-                                </th>
-                              )}
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                {t('admin.products.add.compareAtPrice')}
+                              </th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                {t('admin.products.add.stock')}
+                              </th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                {t('admin.products.add.sku')}
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                            {matrixSelectedColors.length > 0 ? (
-                              matrixSelectedColors.map((colorValue) => {
-                              const colorAttributeValue = getColorAttribute()?.values.find(v => v.value === colorValue);
-                              const colorLabel = colorAttributeValue?.label || colorValue;
-                              const attributeColors = colorAttributeValue?.colors || [];
-                              const colorHex = attributeColors.length > 0 ? attributeColors[0] : getColorHex(colorLabel);
-                              
-                              return (
-                                <tr key={colorValue} className="hover:bg-gray-50">
-                                  <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r">
-                                    <div className="space-y-3">
+                            {generatedVariants.map((variant) => (
+                              <tr key={variant.id} className="hover:bg-gray-50">
+                                {Array.from(selectedAttributesForVariants).map((attributeId) => {
+                                  const attrValue = variant.attributeValues.find(av => av.attributeId === attributeId);
+                                  const attribute = attributes.find(a => a.id === attributeId);
+                                  const isColor = attribute?.key === 'color';
+                                  const colorHex = isColor && attrValue 
+                                    ? (attributes.find(a => a.id === attributeId)?.values.find(v => v.id === attrValue.valueId)?.colors?.[0] || 
+                                       getColorHex(attrValue.label))
+                                    : null;
+                                  
+                                  return (
+                                    <td key={attributeId} className="px-4 py-3 whitespace-nowrap">
                                       <div className="flex items-center gap-2">
-                                        {/* Show color swatches from attribute value if available */}
-                                        {attributeColors.length > 0 ? (
-                                          <div className="flex items-center gap-1">
-                                            {attributeColors.map((colorHexValue, idx) => (
-                                              <span
-                                                key={idx}
-                                                className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm"
-                                                style={{ backgroundColor: colorHexValue }}
-                                                title={colorHexValue}
-                                              />
-                                            ))}
-                                          </div>
-                                        ) : (
+                                        {isColor && colorHex && (
                                           <span
-                                            className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm"
+                                            className="inline-block w-5 h-5 rounded-full border-2 border-gray-300 shadow-sm"
                                             style={{ backgroundColor: colorHex }}
                                           />
                                         )}
-                                        <span className="text-sm font-medium text-gray-900">{colorLabel}</span>
-                                      </div>
-                                      {/* Image Upload Section - Per Row */}
-                                      <div>
-                                        <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.image')}</label>
-                                        <div className="space-y-2">
-                                          {/* Preview attribute value image if available */}
-                                          {colorAttributeValue?.imageUrl && (
-                                            <div className="relative group mb-2">
-                                              <img
-                                                src={colorAttributeValue.imageUrl}
-                                                alt={t('admin.products.add.preview')}
-                                                className="w-full h-24 object-cover rounded border border-gray-300"
-                                                title={t('admin.products.add.fromAttribute')}
-                                              />
-                                              <div className="absolute top-1 left-1 bg-blue-500 text-white text-xs px-1 rounded">
-                                                {t('admin.products.add.fromAttribute') || 'From Attribute'}
-                                              </div>
-                                            </div>
-                                          )}
-                                          {/* Preview existing image from matrix */}
-                                          {matrixVariants[colorValue]?.image && (
-                                            <div className="relative group mb-2">
-                                              <img
-                                                src={matrixVariants[colorValue].image || ''}
-                                                alt={t('admin.products.add.preview')}
-                                                className="w-full h-24 object-cover rounded border border-gray-300"
-                                              />
-                                              <button
-                                                type="button"
-                                                onClick={() => removeMatrixImage(colorValue)}
-                                                className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                                                title={t('admin.products.add.removeImage')}
-                                              >
-                                                ×
-                                              </button>
-                                            </div>
-                                          )}
-                                          {/* Upload button */}
-                                          <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => {
-                                              setMatrixImageTarget(colorValue);
-                                              matrixImageFileInputRef.current?.click();
-                                            }}
-                                            disabled={imageUploadLoading}
-                                            className="w-full text-xs"
-                                          >
-                                            {imageUploadLoading && matrixImageTarget === colorValue ? t('admin.products.add.uploading') : matrixVariants[colorValue]?.image ? t('admin.products.add.changeImage') : t('admin.products.add.addImage')}
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  {matrixSelectedSizes.length > 0 ? (
-                                    matrixSelectedSizes.map((sizeValue) => {
-                                      const sizeLabel = getSizeAttribute()?.values.find(v => v.value === sizeValue)?.label || sizeValue;
-                                      const key = `${colorValue}-${sizeValue}`;
-                                      const variant = matrixVariants[key] || { price: '', compareAtPrice: '', stock: '', sku: '', image: null };
-                                      
-                                      return (
-                                        <td key={sizeValue} className="px-4 py-3 border-r last:border-r-0">
-                                          <div className="space-y-2 min-w-[200px]">
-                                            <div>
-                                              <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.price')} *</label>
-                                              <Input
-                                                type="number"
-                                                value={variant.price}
-                                                onChange={(e) => {
-                                                  setMatrixVariants({
-                                                    ...matrixVariants,
-                                                    [key]: { ...variant, price: e.target.value }
-                                                  });
-                                                }}
-                                                placeholder={t('admin.products.add.pricePlaceholder')}
-                                                className="w-full text-sm"
-                                                min="0"
-                                                step="0.01"
-                                                required
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.compareAtPrice')}</label>
-                                              <Input
-                                                type="number"
-                                                value={variant.compareAtPrice}
-                                                onChange={(e) => {
-                                                  setMatrixVariants({
-                                                    ...matrixVariants,
-                                                    [key]: { ...variant, compareAtPrice: e.target.value }
-                                                  });
-                                                }}
-                                                placeholder={t('admin.products.add.pricePlaceholder')}
-                                                className="w-full text-sm"
-                                                min="0"
-                                                step="0.01"
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')} *</label>
-                                              <Input
-                                                type="number"
-                                                value={variant.stock}
-                                                onChange={(e) => {
-                                                  setMatrixVariants({
-                                                    ...matrixVariants,
-                                                    [key]: { ...variant, stock: e.target.value }
-                                                  });
-                                                }}
-                                                placeholder={t('admin.products.add.stockPlaceholder')}
-                                                className="w-full text-sm"
-                                                min="0"
-                                                required
-                                              />
-                                            </div>
-                                            <div>
-                                              <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.sku').replace(':', '')}</label>
-                                              <Input
-                                                type="text"
-                                                value={variant.sku}
-                                                onChange={(e) => {
-                                                  setMatrixVariants({
-                                                    ...matrixVariants,
-                                                    [key]: { ...variant, sku: e.target.value }
-                                                  });
-                                                }}
-                                                placeholder={t('admin.products.add.autoGenerated')}
-                                                className="w-full text-sm"
-                                              />
-                                            </div>
-                                          </div>
-                                        </td>
-                                      );
-                                    })
-                                  ) : (
-                                    <td className="px-4 py-3">
-                                      <div className="space-y-2 min-w-[200px]">
-                                        <div>
-                                          <label className="block text-xs text-gray-500 mb-1">Price *</label>
-                                          <Input
-                                            type="number"
-                                            value={matrixVariants[colorValue]?.price || ''}
-                                            onChange={(e) => {
-                                              setMatrixVariants({
-                                                ...matrixVariants,
-                                                [colorValue]: { 
-                                                  ...(matrixVariants[colorValue] || { compareAtPrice: '', stock: '', sku: '', image: null }), 
-                                                  price: e.target.value 
-                                                }
-                                              });
-                                            }}
-                                            placeholder="0.00"
-                                            className="w-full text-sm"
-                                            min="0"
-                                            step="0.01"
-                                            required
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.compareAtPrice')}</label>
-                                          <Input
-                                            type="number"
-                                            value={matrixVariants[colorValue]?.compareAtPrice || ''}
-                                            onChange={(e) => {
-                                              setMatrixVariants({
-                                                ...matrixVariants,
-                                                [colorValue]: { 
-                                                  ...(matrixVariants[colorValue] || { price: '', stock: '', sku: '', image: null }), 
-                                                  compareAtPrice: e.target.value 
-                                                }
-                                              });
-                                            }}
-                                            placeholder={t('admin.products.add.pricePlaceholder')}
-                                            className="w-full text-sm"
-                                            min="0"
-                                            step="0.01"
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')} *</label>
-                                          <Input
-                                            type="number"
-                                            value={matrixVariants[colorValue]?.stock || ''}
-                                            onChange={(e) => {
-                                              setMatrixVariants({
-                                                ...matrixVariants,
-                                                [colorValue]: { 
-                                                  ...(matrixVariants[colorValue] || { price: '', compareAtPrice: '', sku: '', image: null }), 
-                                                  stock: e.target.value 
-                                                }
-                                              });
-                                            }}
-                                            placeholder={t('admin.products.add.stockPlaceholder')}
-                                            className="w-full text-sm"
-                                            min="0"
-                                            required
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.sku').replace(':', '')}</label>
-                                          <Input
-                                            type="text"
-                                            value={matrixVariants[colorValue]?.sku || ''}
-                                            onChange={(e) => {
-                                              setMatrixVariants({
-                                                ...matrixVariants,
-                                                [colorValue]: { 
-                                                  ...(matrixVariants[colorValue] || { price: '', compareAtPrice: '', stock: '', image: null }), 
-                                                  sku: e.target.value 
-                                                }
-                                              });
-                                            }}
-                                            placeholder={t('admin.products.add.autoGenerated')}
-                                            className="w-full text-sm"
-                                          />
-                                        </div>
-                                      </div>
-                                    </td>
-                                  )}
-                                </tr>
-                              );
-                            })
-                            ) : matrixSelectedSizes.length > 0 ? (
-                              // Only sizes, no colors
-                              <tr className="hover:bg-gray-50">
-                                <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r">
-                                  <span className="text-sm font-medium text-gray-900">{t('admin.products.add.sizes')}</span>
-                                </td>
-                                {matrixSelectedSizes.map((sizeValue) => {
-                                  const sizeLabel = getSizeAttribute()?.values.find(v => v.value === sizeValue)?.label || sizeValue;
-                                  const key = sizeValue;
-                                  const variant = matrixVariants[key] || { price: '', compareAtPrice: '', stock: '', sku: '', image: null };
-                                  
-                                  return (
-                                    <td key={sizeValue} className="px-4 py-3 border-r last:border-r-0">
-                                      <div className="space-y-2 min-w-[200px]">
-                                        <div>
-                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.price')} *</label>
-                                          <Input
-                                            type="number"
-                                            value={variant.price}
-                                            onChange={(e) => {
-                                              setMatrixVariants({
-                                                ...matrixVariants,
-                                                [key]: { ...variant, price: e.target.value }
-                                              });
-                                            }}
-                                            placeholder={t('admin.products.add.pricePlaceholder')}
-                                            className="w-full text-sm"
-                                            min="0"
-                                            step="0.01"
-                                            required
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.compareAtPrice')}</label>
-                                          <Input
-                                            type="number"
-                                            value={variant.compareAtPrice}
-                                            onChange={(e) => {
-                                              setMatrixVariants({
-                                                ...matrixVariants,
-                                                [key]: { ...variant, compareAtPrice: e.target.value }
-                                              });
-                                            }}
-                                            placeholder={t('admin.products.add.pricePlaceholder')}
-                                            className="w-full text-sm"
-                                            min="0"
-                                            step="0.01"
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')} *</label>
-                                          <Input
-                                            type="number"
-                                            value={variant.stock}
-                                            onChange={(e) => {
-                                              setMatrixVariants({
-                                                ...matrixVariants,
-                                                [key]: { ...variant, stock: e.target.value }
-                                              });
-                                            }}
-                                            placeholder={t('admin.products.add.stockPlaceholder')}
-                                            className="w-full text-sm"
-                                            min="0"
-                                            required
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.sku').replace(':', '')}</label>
-                                          <Input
-                                            type="text"
-                                            value={variant.sku}
-                                            onChange={(e) => {
-                                              setMatrixVariants({
-                                                ...matrixVariants,
-                                                [key]: { ...variant, sku: e.target.value }
-                                              });
-                                            }}
-                                            placeholder={t('admin.products.add.autoGenerated')}
-                                            className="w-full text-sm"
-                                          />
-                                        </div>
+                                        <span className="text-sm text-gray-900">{attrValue?.label || '-'}</span>
                                       </div>
                                     </td>
                                   );
                                 })}
-                              </tr>
-                            ) : (
-                              // No colors, no sizes - single variant
-                              <tr className="hover:bg-gray-50">
-                                <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r">
-                                  <span className="text-sm font-medium text-gray-900">{t('admin.products.add.singleVariantLabel')}</span>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <Input
+                                    type="number"
+                                    value={variant.price}
+                                    onChange={(e) => {
+                                      setGeneratedVariants(prev => prev.map(v => 
+                                        v.id === variant.id ? { ...v, price: e.target.value } : v
+                                      ));
+                                    }}
+                                    placeholder="0.00"
+                                    className="w-24 text-sm"
+                                    min="0"
+                                    step="0.01"
+                                  />
                                 </td>
-                                <td className="px-4 py-3">
-                                    <div className="space-y-2 min-w-[200px]">
-                                    <div>
-                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.price')} *</label>
-                                      <Input
-                                        type="number"
-                                        value={matrixVariants['single']?.price || ''}
-                                        onChange={(e) => {
-                                          setMatrixVariants({
-                                            ...matrixVariants,
-                                            'single': { 
-                                              ...(matrixVariants['single'] || { compareAtPrice: '', stock: '', sku: '' }), 
-                                              price: e.target.value 
-                                            }
-                                          });
-                                        }}
-                                        placeholder={t('admin.products.add.pricePlaceholder')}
-                                        className="w-full text-sm"
-                                        min="0"
-                                        step="0.01"
-                                        required
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.compareAtPrice')}</label>
-                                      <Input
-                                        type="number"
-                                        value={matrixVariants['single']?.compareAtPrice || ''}
-                                        onChange={(e) => {
-                                          setMatrixVariants({
-                                            ...matrixVariants,
-                                            'single': { 
-                                              ...(matrixVariants['single'] || { price: '', stock: '', sku: '' }), 
-                                              compareAtPrice: e.target.value 
-                                            }
-                                          });
-                                        }}
-                                        placeholder={t('admin.products.add.pricePlaceholder')}
-                                        className="w-full text-sm"
-                                        min="0"
-                                        step="0.01"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')} *</label>
-                                      <Input
-                                        type="number"
-                                        value={matrixVariants['single']?.stock || ''}
-                                        onChange={(e) => {
-                                          setMatrixVariants({
-                                            ...matrixVariants,
-                                            'single': { 
-                                              ...(matrixVariants['single'] || { price: '', compareAtPrice: '', sku: '', images: [] }), 
-                                              stock: e.target.value 
-                                            }
-                                          });
-                                        }}
-                                        placeholder={t('admin.products.add.stockPlaceholder')}
-                                        className="w-full text-sm"
-                                        min="0"
-                                        required
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.sku').replace(':', '')}</label>
-                                      <Input
-                                        type="text"
-                                        value={matrixVariants['single']?.sku || ''}
-                                        onChange={(e) => {
-                                          setMatrixVariants({
-                                            ...matrixVariants,
-                                            'single': { 
-                                              ...(matrixVariants['single'] || { price: '', compareAtPrice: '', stock: '', images: [] }), 
-                                              sku: e.target.value 
-                                            }
-                                          });
-                                        }}
-                                        placeholder={t('admin.products.add.autoGenerated')}
-                                        className="w-full text-sm"
-                                      />
-                                    </div>
-                                    {/* Image Upload Section */}
-                                    <div>
-                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.image')}</label>
-                                      <div className="space-y-2">
-                                        {/* Preview existing image */}
-                                        {matrixVariants['single']?.image && (
-                                          <div className="relative group mb-2">
-                                            <img
-                                              src={matrixVariants['single'].image}
-                                              alt={t('admin.products.add.preview')}
-                                              className="w-full h-24 object-cover rounded border border-gray-300"
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={() => removeMatrixImage('single')}
-                                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                                              title={t('admin.products.add.removeImage')}
-                                            >
-                                              ×
-                                            </button>
-                                          </div>
-                                        )}
-                                        {/* Upload button */}
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => {
-                                            setMatrixImageTarget('single');
-                                            matrixImageFileInputRef.current?.click();
-                                          }}
-                                          disabled={imageUploadLoading}
-                                          className="w-full text-xs"
-                                        >
-                                          {imageUploadLoading && matrixImageTarget === 'single' ? t('admin.products.add.uploading') : matrixVariants['single']?.image ? t('admin.products.add.changeImage') : t('admin.products.add.addImage')}
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </div>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <Input
+                                    type="number"
+                                    value={variant.compareAtPrice}
+                                    onChange={(e) => {
+                                      setGeneratedVariants(prev => prev.map(v => 
+                                        v.id === variant.id ? { ...v, compareAtPrice: e.target.value } : v
+                                      ));
+                                    }}
+                                    placeholder="0.00"
+                                    className="w-24 text-sm"
+                                    min="0"
+                                    step="0.01"
+                                  />
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <Input
+                                    type="number"
+                                    value={variant.stock}
+                                    onChange={(e) => {
+                                      setGeneratedVariants(prev => prev.map(v => 
+                                        v.id === variant.id ? { ...v, stock: e.target.value } : v
+                                      ));
+                                    }}
+                                    placeholder="0"
+                                    className="w-24 text-sm"
+                                    min="0"
+                                  />
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <Input
+                                    type="text"
+                                    value={variant.sku}
+                                    onChange={(e) => {
+                                      setGeneratedVariants(prev => prev.map(v => 
+                                        v.id === variant.id ? { ...v, sku: e.target.value } : v
+                                      ));
+                                    }}
+                                    placeholder="Auto-generated"
+                                    className="w-32 text-sm"
+                                  />
                                 </td>
                               </tr>
-                            )}
+                            ))}
                           </tbody>
                         </table>
                       </div>
@@ -3863,241 +3202,19 @@ function AddProductPageContent() {
                         <Button
                           type="button"
                           onClick={() => {
-                            // Convert matrix variants to formData.variants structure
-                            // Create variants from matrix
-                            const newVariants: Variant[] = [];
-                            
-                            if (matrixSelectedColors.length > 0) {
-                              // Group by color (one variant per color with all its sizes)
-                              matrixSelectedColors.forEach((colorValue) => {
-                              const colorAttributeValue = getColorAttribute()?.values.find(v => v.value === colorValue);
-                              const colorLabel = colorAttributeValue?.label || colorValue;
-                              
-                              // Get colors and imageUrl from attribute value
-                              const attributeColors = colorAttributeValue?.colors || [];
-                              const attributeImageUrl = colorAttributeValue?.imageUrl;
-                              
-                              // Initialize images array with attribute imageUrl if available
-                              const initialImages: string[] = [];
-                              if (attributeImageUrl) {
-                                initialImages.push(attributeImageUrl);
-                              }
-                              
-                              const variant: Variant = {
-                                id: `variant-${Date.now()}-${colorValue}`,
-                                price: '', // Will be set per color
-                                compareAtPrice: '',
-                                sku: '',
-                                colors: [{
-                                  colorValue,
-                                  colorLabel,
-                                  images: initialImages,
-                                  stock: matrixSelectedSizes.length === 0 ? (matrixVariants[colorValue]?.stock || '') : '',
-                                  price: matrixSelectedSizes.length === 0 ? (matrixVariants[colorValue]?.price || '') : undefined,
-                                  compareAtPrice: matrixSelectedSizes.length === 0 ? (matrixVariants[colorValue]?.compareAtPrice || '') : undefined,
-                                  sizes: matrixSelectedSizes,
-                                  sizeStocks: {},
-                                  sizeLabels: {},
-                                }],
-                              };
-
-                              // If sizes exist, add size stocks, prices, SKUs, and images
-                              if (matrixSelectedSizes.length > 0) {
-                                // Use first size's price as base price (or average if needed)
-                                const firstSizeKey = `${colorValue}-${matrixSelectedSizes[0]}`;
-                                const firstSizeVariant = matrixVariants[firstSizeKey];
-                                if (firstSizeVariant) {
-                                  variant.colors[0].price = firstSizeVariant.price;
-                                  variant.colors[0].compareAtPrice = firstSizeVariant.compareAtPrice;
-                                  // Use first size's SKU as base SKU for validation
-                                  variant.sku = firstSizeVariant.sku || '';
-                                }
-                                
-                                // Use image from color row (stored with colorValue key) or attribute value
-                                const colorRowImage = matrixVariants[colorValue]?.image;
-                                if (colorRowImage && !variant.colors[0].images.includes(colorRowImage)) {
-                                  variant.colors[0].images.push(colorRowImage);
-                                }
-                                
-                                matrixSelectedSizes.forEach((sizeValue) => {
-                                  const key = `${colorValue}-${sizeValue}`;
-                                  const matrixVariant = matrixVariants[key];
-                                  if (matrixVariant) {
-                                    variant.colors[0].sizeStocks![sizeValue] = matrixVariant.stock;
-                                    // Store price per size in sizePrices
-                                    if (!variant.colors[0].sizePrices) {
-                                      variant.colors[0].sizePrices = {};
-                                    }
-                                    if (matrixVariant.price) {
-                                      variant.colors[0].sizePrices![sizeValue] = matrixVariant.price;
-                                    }
-                                    // Store compareAtPrice per size in sizeCompareAtPrices
-                                    if (!variant.colors[0].sizeCompareAtPrices) {
-                                      variant.colors[0].sizeCompareAtPrices = {};
-                                    }
-                                    if (matrixVariant.compareAtPrice) {
-                                      variant.colors[0].sizeCompareAtPrices![sizeValue] = matrixVariant.compareAtPrice;
-                                    }
-                                    // Store SKU per size in sizeLabels for later use
-                                    if (!variant.colors[0].sizeLabels) {
-                                      variant.colors[0].sizeLabels = {};
-                                    }
-                                    if (matrixVariant.sku) {
-                                      variant.colors[0].sizeLabels![sizeValue] = matrixVariant.sku;
-                                      // If variant.sku is empty, use first size's SKU
-                                      if (!variant.sku || variant.sku === '') {
-                                        variant.sku = matrixVariant.sku;
-                                      }
-                                    }
-                                  }
-                                });
-                              } else {
-                                // No sizes - use color's price, SKU, and image directly
-                                const colorVariant = matrixVariants[colorValue];
-                                if (colorVariant) {
-                                  variant.colors[0].price = colorVariant.price;
-                                  variant.colors[0].compareAtPrice = colorVariant.compareAtPrice;
-                                  variant.sku = colorVariant.sku || '';
-                                  // Add color's image from matrix if not already added from attribute
-                                  if (colorVariant.image && !variant.colors[0].images.includes(colorVariant.image)) {
-                                    variant.colors[0].images.push(colorVariant.image);
-                                  }
-                                }
-                              }
-
-                              newVariants.push(variant);
-                            });
-                            } else if (matrixSelectedSizes.length > 0) {
-                              // Only sizes, no colors
-                              const variant: Variant = {
-                                id: `variant-${Date.now()}-sizes`,
-                                price: '',
-                                compareAtPrice: '',
-                                sku: '',
-                                colors: [{
-                                  colorValue: '',
-                                  colorLabel: t('admin.products.add.defaultColor'),
-                                  images: [],
-                                  stock: '',
-                                  sizes: matrixSelectedSizes,
-                                  sizeStocks: {},
-                                  sizeLabels: {},
-                                }],
-                              };
-
-                              // Use first size's price (sizes are stored individually)
-                              const firstSizeKey = matrixSelectedSizes[0];
-                              const firstSizeVariant = matrixVariants[firstSizeKey];
-                              if (firstSizeVariant) {
-                                variant.colors[0].price = firstSizeVariant.price;
-                                variant.colors[0].compareAtPrice = firstSizeVariant.compareAtPrice;
-                                // Use first size's SKU as base SKU for validation
-                                variant.sku = firstSizeVariant.sku || '';
-                              }
-                              
-                              // Add size stocks, prices, and SKUs
-                              matrixSelectedSizes.forEach((sizeValue) => {
-                                const key = sizeValue;
-                                const matrixVariant = matrixVariants[key]
-                                if (matrixVariant) {
-                                  variant.colors[0].sizeStocks![sizeValue] = matrixVariant.stock;
-                                  // Store price per size in sizePrices
-                                  if (!variant.colors[0].sizePrices) {
-                                    variant.colors[0].sizePrices = {};
-                                  }
-                                  if (matrixVariant.price) {
-                                    variant.colors[0].sizePrices![sizeValue] = matrixVariant.price;
-                                  }
-                                  // Store compareAtPrice per size in sizeCompareAtPrices
-                                  if (!variant.colors[0].sizeCompareAtPrices) {
-                                    variant.colors[0].sizeCompareAtPrices = {};
-                                  }
-                                  if (matrixVariant.compareAtPrice) {
-                                    variant.colors[0].sizeCompareAtPrices![sizeValue] = matrixVariant.compareAtPrice;
-                                  }
-                                  if (matrixVariant.sku) {
-                                    variant.colors[0].sizeLabels![sizeValue] = matrixVariant.sku;
-                                    // If variant.sku is empty, use first size's SKU
-                                    if (!variant.sku || variant.sku === '') {
-                                      variant.sku = matrixVariant.sku;
-                                    }
-                                  }
-                                  // Use image from size row (stored with sizeValue key)
-                                  if (matrixVariant.image && !variant.colors[0].images.length) {
-                                    variant.colors[0].images = [matrixVariant.image];
-                                  }
-                                }
-                              });
-
-                              newVariants.push(variant);
-                            } else {
-                              // Single variant - no colors, no sizes
-                              const singleVariant = matrixVariants['single'];
-                              const variant: Variant = {
-                                id: `variant-${Date.now()}-single`,
-                                price: singleVariant?.price || '',
-                                compareAtPrice: singleVariant?.compareAtPrice || '',
-                                sku: singleVariant?.sku || '',
-                                colors: [{
-                                  colorValue: '',
-                                  colorLabel: t('admin.products.add.defaultColor'),
-                                  images: singleVariant?.image ? [singleVariant.image] : [],
-                                  stock: singleVariant?.stock || '',
-                                  price: singleVariant?.price || undefined,
-                                  compareAtPrice: singleVariant?.compareAtPrice || undefined,
-                                  sizes: [],
-                                  sizeStocks: {},
-                                  sizeLabels: {},
-                                }],
-                              };
-                              newVariants.push(variant);
-                            }
-
-                            // Validate that variants were created
-                            if (newVariants.length === 0) {
-                              alert(t('admin.products.add.noVariantsCreated'));
-                              return;
-                            }
-
-                            console.log('✅ [ADMIN] Generated variants:', newVariants.length, newVariants);
-
-                            // Update formData with new variants
-                            setFormData((prev) => {
-                              const updated = {
-                                ...prev,
-                                variants: newVariants,
-                              };
-                              console.log('✅ [ADMIN] Updated formData.variants:', updated.variants.length);
-                              return updated;
-                            });
-
-                            // Disable matrix builder and show success
-                            setUseMatrixBuilder(false);
-                            const variantCount = newVariants.length;
-                            const colorCount = matrixSelectedColors.length;
-                            const sizeCount = matrixSelectedSizes.length;
-                            let message = t('admin.products.add.variantsCreatedSuccess').replace('{count}', variantCount.toString());
-                            if (colorCount > 0) message += t('admin.products.add.variantsCreatedSuccessColors').replace('{count}', colorCount.toString());
-                            if (sizeCount > 0) message += t('admin.products.add.variantsCreatedSuccessSizes').replace('{count}', sizeCount.toString());
-                            alert(message);
+                            // Convert generated variants to formData.variants structure
+                            // This will be handled in handleSubmit
+                            console.log('✅ [VARIANT BUILDER] Variants ready for submission:', generatedVariants);
+                            alert(t('admin.products.add.variantsReady') || `Ready to submit ${generatedVariants.length} variants!`);
                           }}
-                          className="bg-blue-600 text-white hover:bg-blue-700"
                         >
-                          {t('admin.products.add.generateVariantsFromMatrix')}
+                          {t('admin.products.add.variantsReady') || 'Variants Ready'}
                         </Button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="mt-6 p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 text-center">
-                      <p className="text-gray-500">
-                        {isClothingCategory() && matrixSelectedSizes.length === 0 && matrixSelectedColors.length === 0
-                          ? t('admin.products.add.selectAtLeastOneSizeOrColor')
-                          : t('admin.products.add.selectColorsOrSizes')}
-                      </p>
-                    </div>
                   )}
                 </div>
-              ) : null}
+              )}
             </div>
 
             {/* Publishing */}
@@ -4131,35 +3248,16 @@ function AddProductPageContent() {
                 </Button>
                 <Button
                   type="button"
-                  variant="ghost"
-                  onClick={() => router.push('/admin')}
-                  disabled={loading}
+                  variant="outline"
+                  onClick={() => router.push('/admin/products')}
                   className="w-full sm:w-auto order-1 sm:order-2"
                 >
                   {t('admin.common.cancel')}
                 </Button>
               </div>
             </div>
-            {/* Hidden input for color image uploads */}
-            <input
-              ref={colorImageFileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleUploadColorImages}
-            />
-            {/* Hidden input for matrix image uploads */}
-            <input
-              ref={matrixImageFileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleUploadMatrixImages}
-            />
           </form>
-          </Card>
+        </Card>
         </div>
       </div>
     </div>
@@ -4169,9 +3267,10 @@ function AddProductPageContent() {
 export default function AddProductPage() {
   return (
     <Suspense fallback={
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+          <p className="text-sm text-gray-600">Loading...</p>
         </div>
       </div>
     }>
@@ -4179,4 +3278,3 @@ export default function AddProductPage() {
     </Suspense>
   );
 }
-
