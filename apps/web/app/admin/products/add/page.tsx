@@ -1935,12 +1935,31 @@ function AddProductPageContent() {
             const colorSizes = colorDataItem.sizes || [];
             const colorSizeStocks = colorDataItem.sizeStocks || {};
             
-            // Validate price for this color
-            const colorPriceValue = parseFloat(colorDataItem.price || '0');
-            if (!colorDataItem.price || isNaN(colorPriceValue) || colorPriceValue <= 0) {
-              alert(t('admin.products.add.variantPriceRequired').replace('{index}', variantIndex.toString()).replace('{color}', colorDataItem.colorLabel));
-              setLoading(false);
-              return;
+            // Skip price validation for empty colors (non-color attributes)
+            // If colorValue is empty, use variant base price instead
+            const hasColor = colorDataItem.colorValue && colorDataItem.colorValue.trim() !== '';
+            
+            // Validate price for this color only if it has a color value
+            // For non-color attributes, use variant base price
+            if (hasColor) {
+              const colorPriceValue = parseFloat(colorDataItem.price || '0');
+              if (!colorDataItem.price || isNaN(colorPriceValue) || colorPriceValue <= 0) {
+                const colorLabel = colorDataItem.colorLabel || colorDataItem.colorValue || 'color';
+                alert(t('admin.products.add.variantPriceRequired').replace('{index}', variantIndex.toString()).replace('{color}', colorLabel));
+                setLoading(false);
+                return;
+              }
+            } else {
+              // For non-color attributes, validate variant base price
+              // But only if this is the first colorDataItem (to avoid duplicate validation)
+              if (colorData.indexOf(colorDataItem) === 0) {
+                const variantPriceValue = parseFloat(variant.price || '0');
+                if (!variant.price || isNaN(variantPriceValue) || variantPriceValue <= 0) {
+                  alert(t('admin.products.add.variantPriceRequired').replace('{index}', variantIndex.toString()).replace('{color}', 'variant'));
+                  setLoading(false);
+                  return;
+                }
+              }
             }
 
             // If category requires sizes, check if color has at least one size
@@ -2087,6 +2106,51 @@ function AddProductPageContent() {
                   ? parseFloat(colorData.compareAtPrice)
                   : baseVariantData.compareAtPrice);
               
+              // Collect all attribute options for this variant
+              const variantOptions: Array<{ attributeKey: string; value: string; valueId?: string }> = [];
+              
+              // Add color option if exists
+              if (colorData.colorValue && colorData.colorValue.trim() !== '') {
+                const colorAttr = attributes.find(a => a.key === 'color');
+                const colorValue = colorAttr?.values.find(v => v.value === colorData.colorValue);
+                if (colorValue) {
+                  variantOptions.push({ attributeKey: 'color', value: colorData.colorValue, valueId: colorValue.id });
+                } else {
+                  variantOptions.push({ attributeKey: 'color', value: colorData.colorValue });
+                }
+              }
+              
+              // Add size option if exists
+              if (size && size.trim() !== '') {
+                const sizeAttr = attributes.find(a => a.key === 'size');
+                const sizeValue = sizeAttr?.values.find(v => v.value === size);
+                if (sizeValue) {
+                  variantOptions.push({ attributeKey: 'size', value: size, valueId: sizeValue.id });
+                } else {
+                  variantOptions.push({ attributeKey: 'size', value: size });
+                }
+              }
+              
+              // Add other attribute options from selectedAttributesForVariants (excluding color and size as they're already added)
+              if (selectedAttributesForVariants.size > 0 && generatedVariants.length > 0) {
+                const variant = generatedVariants[0];
+                Array.from(selectedAttributesForVariants).forEach((attributeId) => {
+                  const attribute = attributes.find(a => a.id === attributeId);
+                  if (!attribute || attribute.key === 'color' || attribute.key === 'size') return;
+                  
+                  const selectedValueIds = variant.selectedValueIds.filter(id => 
+                    attribute.values.some(v => v.id === id)
+                  );
+                  
+                  selectedValueIds.forEach((valueId) => {
+                    const value = attribute.values.find(v => v.id === valueId);
+                    if (value) {
+                      variantOptions.push({ attributeKey: attribute.key, value: value.value, valueId: value.id });
+                    }
+                  });
+                });
+              }
+              
               variants.push({
                 ...baseVariantData,
                 price: finalPrice,
@@ -2097,6 +2161,7 @@ function AddProductPageContent() {
                 sku: finalSku,
                 imageUrl: variantImageUrl,
                 isFeatured: !!colorData.isFeatured,
+                options: variantOptions.length > 0 ? variantOptions : undefined,
               });
             });
           } 
@@ -2120,14 +2185,50 @@ function AddProductPageContent() {
               : undefined;
 
             // Используем цену цвета, если указана, иначе цену варианта
-            const finalPrice = colorData.price && colorData.price.trim() !== '' 
+            // For empty colors (non-color attributes), always use variant base price
+            const hasColor = colorData.colorValue && colorData.colorValue.trim() !== '';
+            const finalPrice = hasColor && colorData.price && colorData.price.trim() !== '' 
               ? parseFloat(colorData.price) 
               : baseVariantData.price;
 
-            const finalCompareAtPrice = colorData.compareAtPrice && colorData.compareAtPrice.trim() !== ''
+            const finalCompareAtPrice = hasColor && colorData.compareAtPrice && colorData.compareAtPrice.trim() !== ''
               ? parseFloat(colorData.compareAtPrice)
               : baseVariantData.compareAtPrice;
 
+            // Collect all attribute options for this variant
+            const variantOptions: Array<{ attributeKey: string; value: string; valueId?: string }> = [];
+            
+            // Add color option if exists
+            if (colorData.colorValue && colorData.colorValue.trim() !== '') {
+              const colorAttr = attributes.find(a => a.key === 'color');
+              const colorValue = colorAttr?.values.find(v => v.value === colorData.colorValue);
+              if (colorValue) {
+                variantOptions.push({ attributeKey: 'color', value: colorData.colorValue, valueId: colorValue.id });
+              } else {
+                variantOptions.push({ attributeKey: 'color', value: colorData.colorValue });
+              }
+            }
+            
+            // Add other attribute options from selectedAttributesForVariants
+            if (selectedAttributesForVariants.size > 0 && generatedVariants.length > 0) {
+              const variant = generatedVariants[0];
+              Array.from(selectedAttributesForVariants).forEach((attributeId) => {
+                const attribute = attributes.find(a => a.id === attributeId);
+                if (!attribute || attribute.key === 'color' || attribute.key === 'size') return;
+                
+                const selectedValueIds = variant.selectedValueIds.filter(id => 
+                  attribute.values.some(v => v.id === id)
+                );
+                
+                selectedValueIds.forEach((valueId) => {
+                  const value = attribute.values.find(v => v.id === valueId);
+                  if (value) {
+                    variantOptions.push({ attributeKey: attribute.key, value: value.value, valueId: value.id });
+                  }
+                });
+              });
+            }
+            
             variants.push({
               ...baseVariantData,
               price: finalPrice,
@@ -2137,6 +2238,7 @@ function AddProductPageContent() {
               sku: finalSku,
               imageUrl: variantImageUrl,
               isFeatured: !!colorData.isFeatured,
+              options: variantOptions.length > 0 ? variantOptions : undefined,
             });
           }
         });
@@ -2170,12 +2272,36 @@ function AddProductPageContent() {
             }
           }
           
+          // Collect all attribute options for this variant
+          const variantOptions: Array<{ attributeKey: string; value: string; valueId?: string }> = [];
+          
+          // Add all attribute options from selectedAttributesForVariants
+          if (selectedAttributesForVariants.size > 0 && generatedVariants.length > 0) {
+            const variant = generatedVariants[0];
+            Array.from(selectedAttributesForVariants).forEach((attributeId) => {
+              const attribute = attributes.find(a => a.id === attributeId);
+              if (!attribute) return;
+              
+              const selectedValueIds = variant.selectedValueIds.filter(id => 
+                attribute.values.some(v => v.id === id)
+              );
+              
+              selectedValueIds.forEach((valueId) => {
+                const value = attribute.values.find(v => v.id === valueId);
+                if (value) {
+                  variantOptions.push({ attributeKey: attribute.key, value: value.value, valueId: value.id });
+                }
+              });
+            });
+          }
+          
           variants.push({
             ...baseVariantData,
             color: undefined,
             stock: 0,
             sku: generatedSku,
             imageUrl: variantImageUrl,
+            options: variantOptions.length > 0 ? variantOptions : undefined,
           });
         }
       });

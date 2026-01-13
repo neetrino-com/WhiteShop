@@ -550,7 +550,49 @@ export default function ProductPage({ params }: ProductPageProps) {
 
       const groups = Array.from(valueMap.values()).map((item) => {
         // Find the attribute value to get imageUrl and colors
-        const attrValue = productAttr.attribute.values?.find((v: any) => v.id === item.valueId || v.value === item.value);
+        // Try multiple matching strategies to ensure we find the correct attribute value
+        let attrValue = null;
+        if (item.valueId && productAttr.attribute.values) {
+          // First try by valueId (most reliable)
+          attrValue = productAttr.attribute.values.find((v: any) => v.id === item.valueId);
+        }
+        if (!attrValue && productAttr.attribute.values) {
+          // Fallback: try by value (case-insensitive)
+          attrValue = productAttr.attribute.values.find((v: any) => 
+            v.value?.toLowerCase() === item.value?.toLowerCase() ||
+            v.value === item.value
+          );
+        }
+        if (!attrValue && productAttr.attribute.values) {
+          // Last resort: try by label (case-insensitive)
+          attrValue = productAttr.attribute.values.find((v: any) => 
+            v.label?.toLowerCase() === item.label?.toLowerCase() ||
+            v.label === item.label
+          );
+        }
+        
+        // Debug logging for material attribute
+        if (productAttr.attribute.key === 'material') {
+          console.log('🔍 [PRODUCT PAGE] Material attribute value lookup:', {
+            attributeKey: productAttr.attribute.key,
+            itemValueId: item.valueId,
+            itemValue: item.value,
+            itemLabel: item.label,
+            foundAttrValue: attrValue ? {
+              id: attrValue.id,
+              value: attrValue.value,
+              label: attrValue.label,
+              imageUrl: attrValue.imageUrl
+            } : null,
+            allAttributeValues: productAttr.attribute.values?.map((v: any) => ({
+              id: v.id,
+              value: v.value,
+              label: v.label,
+              imageUrl: v.imageUrl
+            })) || []
+          });
+        }
+        
         return {
           valueId: item.valueId,
           value: item.value,
@@ -564,11 +606,100 @@ export default function ProductPage({ params }: ProductPageProps) {
 
       attributeGroups.set(attrKey, groups);
     });
-  } else {
+    
+    // Also extract any additional attributes from variant options that might not be in productAttributes
+    // This handles cases where attributes were added to variants but not yet synced to productAttributes
+    if (product?.variants) {
+      const allAttributeKeys = new Set<string>();
+      
+      // Collect all attribute keys from variant options
+      product.variants.forEach((variant) => {
+        variant.options?.forEach((opt) => {
+          const attrKey = opt.key || opt.attribute || '';
+          if (attrKey && attrKey !== 'color' && attrKey !== 'size') {
+            allAttributeKeys.add(attrKey);
+          }
+        });
+      });
+      
+      // For each attribute key not already in attributeGroups, create attribute group from variants
+      allAttributeKeys.forEach((attrKey) => {
+        if (!attributeGroups.has(attrKey)) {
+          const valueMap = new Map<string, { valueId?: string; value: string; label: string; variants: ProductVariant[] }>();
+          
+          product.variants?.forEach((variant) => {
+            const option = variant.options?.find((opt) => 
+              (opt.key === attrKey || opt.attribute === attrKey)
+            );
+            
+            if (option) {
+              const valueId = option.valueId || '';
+              const value = option.value || '';
+              const label = option.value || '';
+              
+              const mapKey = valueId || value;
+              if (!valueMap.has(mapKey)) {
+                valueMap.set(mapKey, {
+                  valueId: valueId || undefined,
+                  value,
+                  label,
+                  variants: [],
+                });
+              }
+              valueMap.get(mapKey)!.variants.push(variant);
+            }
+          });
+          
+          if (valueMap.size > 0) {
+            // Try to find attribute values from productAttributes to get imageUrl
+            const productAttr = product.productAttributes?.find((pa: any) => 
+              pa.attribute?.key === attrKey
+            );
+            
+            const groups = Array.from(valueMap.values()).map((item) => {
+              // Try to find attribute value to get imageUrl and colors
+              let attrValue = null;
+              if (productAttr?.attribute?.values) {
+                if (item.valueId) {
+                  attrValue = productAttr.attribute.values.find((v: any) => v.id === item.valueId);
+                }
+                if (!attrValue) {
+                  attrValue = productAttr.attribute.values.find((v: any) => 
+                    v.value?.toLowerCase() === item.value?.toLowerCase() ||
+                    v.value === item.value
+                  );
+                }
+                if (!attrValue) {
+                  attrValue = productAttr.attribute.values.find((v: any) => 
+                    v.label?.toLowerCase() === item.label?.toLowerCase() ||
+                    v.label === item.label
+                  );
+                }
+              }
+              
+              return {
+                valueId: item.valueId,
+                value: item.value,
+                label: item.label,
+                stock: item.variants.reduce((sum, v) => sum + v.stock, 0),
+                variants: item.variants,
+                imageUrl: attrValue?.imageUrl || null,
+                colors: attrValue?.colors || null,
+              };
+            });
+            
+            attributeGroups.set(attrKey, groups);
+            console.log('✅ [PRODUCT PAGE] Added attribute from variants:', attrKey, groups);
+          }
+        }
+      });
+    }
+    } else {
     // Old format: Extract from variants
     if (product?.variants) {
       const colorMap = new Map<string, ProductVariant[]>();
       const sizeMap = new Map<string, ProductVariant[]>();
+      const otherAttributesMap = new Map<string, Map<string, ProductVariant[]>>();
 
       product.variants.forEach((variant) => {
         const color = getOptionValue(variant.options, 'color');
@@ -583,6 +714,24 @@ export default function ProductPage({ params }: ProductPageProps) {
           if (!sizeMap.has(size)) sizeMap.set(size, []);
           sizeMap.get(size)!.push(variant);
         }
+        
+        // Extract other attributes
+        variant.options?.forEach((opt) => {
+          const attrKey = opt.key || opt.attribute || '';
+          if (attrKey && attrKey !== 'color' && attrKey !== 'size') {
+            if (!otherAttributesMap.has(attrKey)) {
+              otherAttributesMap.set(attrKey, new Map());
+            }
+            const value = opt.value || '';
+            if (value) {
+              const valueMap = otherAttributesMap.get(attrKey)!;
+              if (!valueMap.has(value)) {
+                valueMap.set(value, []);
+              }
+              valueMap.get(value)!.push(variant);
+            }
+          }
+        });
       });
 
       if (colorMap.size > 0) {
@@ -602,6 +751,19 @@ export default function ProductPage({ params }: ProductPageProps) {
           variants,
         })));
       }
+      
+      // Add other attributes
+      otherAttributesMap.forEach((valueMap, attrKey) => {
+        attributeGroups.set(attrKey, Array.from(valueMap.entries()).map(([value, variants]) => ({
+          value,
+          label: value,
+          stock: variants.reduce((sum, v) => sum + v.stock, 0),
+          variants,
+          imageUrl: null,
+          colors: null,
+        })));
+        console.log('✅ [PRODUCT PAGE] Added attribute from old format:', attrKey);
+      });
     }
   }
 
@@ -974,11 +1136,13 @@ export default function ProductPage({ params }: ProductPageProps) {
             </div>
 
             {/* Attribute Selectors - Support both new (productAttributes) and old (colorGroups) format */}
-            {product?.productAttributes && product.productAttributes.length > 0 ? (
-              // New format: Use productAttributes
-              product.productAttributes.map((productAttr) => {
-                const attrKey = productAttr.attribute.key;
-                const attrGroups = attributeGroups.get(attrKey) || [];
+            {/* Display all attributes from attributeGroups, not just from productAttributes */}
+            {Array.from(attributeGroups.entries()).length > 0 ? (
+              // Use attributeGroups which contains all attributes (from productAttributes and variants)
+              Array.from(attributeGroups.entries()).map(([attrKey, attrGroups]) => {
+                // Try to get attribute name from productAttributes if available
+                const productAttr = product?.productAttributes?.find((pa: any) => pa.attribute?.key === attrKey);
+                const attributeName = productAttr?.attribute?.name || attrKey.charAt(0).toUpperCase() + attrKey.slice(1);
                 const isColor = attrKey === 'color';
                 const isSize = attrKey === 'size';
 
@@ -989,7 +1153,7 @@ export default function ProductPage({ params }: ProductPageProps) {
                     <label className="text-sm font-bold uppercase">
                       {attrKey === 'color' ? t(language, 'product.color') : 
                        attrKey === 'size' ? t(language, 'product.size') : 
-                       productAttr.attribute.name}:
+                       attributeName}:
                     </label>
                     {isColor ? (
                       <div className="flex flex-wrap gap-2 items-center">
@@ -1044,13 +1208,14 @@ export default function ProductPage({ params }: ProductPageProps) {
                           }
                           const isSelected = selectedSize === g.value.toLowerCase().trim();
                           const isDisabled = displayStock <= 0;
+                          const hasImage = g.imageUrl;
 
                           return (
                             <button 
                               key={g.valueId || g.value}
                               onClick={() => !isDisabled && handleSizeSelect(g.value)}
                               disabled={isDisabled}
-                              className={`min-w-[50px] px-3 py-2 rounded-lg border-2 transition-all ${
+                              className={`min-w-[50px] px-3 py-2 rounded-lg border-2 transition-all flex items-center gap-2 ${
                                 isSelected 
                                   ? 'border-gray-900 bg-gray-50' 
                                   : isDisabled 
@@ -1058,6 +1223,13 @@ export default function ProductPage({ params }: ProductPageProps) {
                                     : 'border-gray-200 hover:border-gray-400'
                               }`}
                             >
+                              {hasImage && (
+                                <img 
+                                  src={g.imageUrl!} 
+                                  alt={g.label}
+                                  className="w-5 h-5 object-cover rounded border border-gray-300"
+                                />
+                              )}
                               <div className="flex flex-col text-center">
                                 <span className="text-sm font-medium">{getAttributeLabel(language, attrKey, g.value)}</span>
                                 {displayStock > 0 && (
@@ -1075,7 +1247,19 @@ export default function ProductPage({ params }: ProductPageProps) {
                           const selectedValueId = selectedAttributeValues.get(attrKey);
                           const isSelected = selectedValueId === g.valueId || (!g.valueId && selectedColor === g.value);
                           const isDisabled = g.stock <= 0;
-                          const hasImage = g.imageUrl;
+                          const hasImage = g.imageUrl && g.imageUrl.trim() !== '';
+
+                          // Debug logging for material attribute
+                          if (attrKey === 'material' && g.imageUrl) {
+                            console.log('🖼️ [PRODUCT PAGE] Material attribute image:', {
+                              attributeKey: attrKey,
+                              valueId: g.valueId,
+                              value: g.value,
+                              label: g.label,
+                              imageUrl: g.imageUrl,
+                              hasImage: hasImage
+                            });
+                          }
 
                           return (
                             <button
@@ -1100,13 +1284,17 @@ export default function ProductPage({ params }: ProductPageProps) {
                                     : 'border-gray-200 hover:border-gray-400'
                               }`}
                             >
-                              {hasImage && (
+                              {hasImage ? (
                                 <img 
                                   src={g.imageUrl!} 
                                   alt={g.label}
-                                  className="w-6 h-6 object-cover rounded border border-gray-300"
+                                  className="w-6 h-6 object-cover rounded border border-gray-300 flex-shrink-0"
+                                  onError={(e) => {
+                                    console.error('❌ [PRODUCT PAGE] Failed to load attribute image:', g.imageUrl);
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
                                 />
-                              )}
+                              ) : null}
                               <span>{getAttributeLabel(language, attrKey, g.value)}</span>
                             </button>
                           );

@@ -1144,6 +1144,11 @@ class AdminService {
       size?: string;
       imageUrl?: string;
       published?: boolean;
+      options?: Array<{
+        attributeKey: string;
+        value: string;
+        valueId?: string;
+      }>;
     }>;
   }) {
     try {
@@ -1152,28 +1157,48 @@ class AdminService {
       const result = await db.$transaction(async (tx: any) => {
         // Generate variants with options
         // Support both old format (color/size strings) and new format (AttributeValue IDs)
+        // Also support generic options array for any attribute type
         const variantsData = await Promise.all(
-          data.variants.map(async (variant) => {
+          data.variants.map(async (variant: any) => {
             const options: any[] = [];
             
-            // Try to find or create AttributeValues for color and size
-            if (variant.color) {
-              const colorValueId = await findOrCreateAttributeValue("color", variant.color, data.locale);
-              if (colorValueId) {
-                options.push({ valueId: colorValueId });
-              } else {
-                // Fallback to old format if AttributeValue not found
-                options.push({ attributeKey: "color", value: variant.color });
+            // If variant has explicit options array, use it (new format)
+            if (variant.options && Array.isArray(variant.options) && variant.options.length > 0) {
+              for (const opt of variant.options) {
+                if (opt.valueId) {
+                  // New format: use valueId
+                  options.push({ valueId: opt.valueId });
+                } else if (opt.attributeKey && opt.value) {
+                  // Try to find or create AttributeValue
+                  const valueId = await findOrCreateAttributeValue(opt.attributeKey, opt.value, data.locale);
+                  if (valueId) {
+                    options.push({ valueId: valueId });
+                  } else {
+                    // Fallback to old format if AttributeValue not found
+                    options.push({ attributeKey: opt.attributeKey, value: opt.value });
+                  }
+                }
               }
-            }
-            
-            if (variant.size) {
-              const sizeValueId = await findOrCreateAttributeValue("size", variant.size, data.locale);
-              if (sizeValueId) {
-                options.push({ valueId: sizeValueId });
-              } else {
-                // Fallback to old format if AttributeValue not found
-                options.push({ attributeKey: "size", value: variant.size });
+            } else {
+              // Old format: Try to find or create AttributeValues for color and size
+              if (variant.color) {
+                const colorValueId = await findOrCreateAttributeValue("color", variant.color, data.locale);
+                if (colorValueId) {
+                  options.push({ valueId: colorValueId });
+                } else {
+                  // Fallback to old format if AttributeValue not found
+                  options.push({ attributeKey: "color", value: variant.color });
+                }
+              }
+              
+              if (variant.size) {
+                const sizeValueId = await findOrCreateAttributeValue("size", variant.size, data.locale);
+                if (sizeValueId) {
+                  options.push({ valueId: sizeValueId });
+                } else {
+                  // Fallback to old format if AttributeValue not found
+                  options.push({ attributeKey: "size", value: variant.size });
+                }
               }
             }
 
