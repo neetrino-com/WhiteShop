@@ -367,6 +367,7 @@
       "applyStockToAll": "Применить запас ко всем",
       "applySkuToAll": "Применить шаблон SKU ко всем",
       "variantsReady": "Варианты готовы",
+      "addVariant": "Добавить",
       "useMatrixBuilder": "Использовать Matrix Builder (Рекомендуется)",
       "selectColors": "Выбрать цвета (необязательно)",
       "selectSizes": "Выбрать размеры",

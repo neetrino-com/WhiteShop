@@ -44,3 +44,4 @@ Migration-ից հետո console-ում կտեսնեք:
 ✅ [ADMIN SERVICE] Migration completed successfully!
 ```
 
+

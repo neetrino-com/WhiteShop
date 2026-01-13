@@ -13,3 +13,4 @@ ADD COLUMN IF NOT EXISTS "colors" JSONB DEFAULT '[]'::jsonb;
 -- END
 -- WHERE "colorHex" IS NOT NULL;
 
+

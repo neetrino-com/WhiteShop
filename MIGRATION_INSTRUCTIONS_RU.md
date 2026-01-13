@@ -44,3 +44,4 @@ AND column_name IN ('colors', 'imageUrl');
 
 Migration-ից հետո **պարտադիր restart անեք Next.js development server-ը** (Ctrl+C և հետո `npm run dev`):
 
+

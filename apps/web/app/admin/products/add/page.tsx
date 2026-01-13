@@ -3366,7 +3366,27 @@ function AddProductPageContent() {
                         </table>
                       </div>
 
-                      <div className="mt-4 flex justify-end">
+                      <div className="mt-4 flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            // Add new empty variant
+                            const newVariant = {
+                              id: `variant-${Date.now()}-${Math.random()}`,
+                              selectedValueIds: [],
+                              price: "0.00",
+                              compareAtPrice: "0.00",
+                              stock: "0",
+                              sku: "PROD",
+                              image: null,
+                            };
+                            setGeneratedVariants(prev => [...prev, newVariant]);
+                            console.log('✅ [VARIANT BUILDER] New variant added:', newVariant);
+                          }}
+                        >
+                          {t('admin.products.add.addVariant') || 'Add'}
+                        </Button>
                         <Button
                           type="button"
                           onClick={() => {

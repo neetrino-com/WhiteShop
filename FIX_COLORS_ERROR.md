@@ -55,3 +55,4 @@ AND column_name IN ('colors', 'imageUrl');
 
 Այնուհետև attributes-ում գույն և նկար ավելացնելիս error չպետք է լինի:
 
+

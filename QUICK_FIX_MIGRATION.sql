@@ -20,3 +20,4 @@ AND column_name IN ('colors', 'imageUrl');
 
 -- After running this, restart your Next.js development server!
 
+

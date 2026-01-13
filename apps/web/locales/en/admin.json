@@ -398,6 +398,7 @@
       "applyStockToAll": "Apply Stock to All",
       "applySkuToAll": "Apply SKU Pattern to All",
       "variantsReady": "Variants Ready",
+      "addVariant": "Add",
       "useMatrixBuilder": "Use Matrix Builder (Recommended)",
       "selectColors": "Select Colors (Optional)",
       "selectSizes": "Select Sizes",

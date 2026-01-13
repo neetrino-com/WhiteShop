@@ -67,3 +67,4 @@ npx prisma migrate dev --name add_colors_and_image_to_attribute_value
 2. Migration-ի success message-ները
 3. Server logs-ում error-ները
 
+

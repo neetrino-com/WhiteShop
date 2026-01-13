@@ -53,3 +53,4 @@ BEGIN
     RAISE NOTICE 'Migration completed successfully! Please restart your Next.js development server.';
 END $$;
 
+
