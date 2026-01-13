@@ -270,7 +270,12 @@ function AddProductPageContent() {
             key: attr.key,
             name: attr.name,
             valuesCount: attr.values?.length || 0,
-            values: attr.values?.map(v => ({ value: v.value, label: v.label })) || []
+            values: attr.values?.map(v => ({ 
+              value: v.value, 
+              label: v.label,
+              colors: v.colors,
+              imageUrl: v.imageUrl 
+            })) || []
           })));
           const colorAttr = attributesRes.data.find(a => a.key === 'color');
           const sizeAttr = attributesRes.data.find(a => a.key === 'size');
@@ -1752,6 +1757,12 @@ function AddProductPageContent() {
                 sizeStocks: {},
               };
               
+              // Add attribute value's imageUrl to color images if it exists
+              if (value.imageUrl) {
+                colorData.images.push(value.imageUrl);
+                console.log('✅ [ADMIN] Added attribute value imageUrl to color:', value.imageUrl);
+              }
+              
               // Add price if set
               if (variant.price) {
                 colorData.price = variant.price;
@@ -1794,6 +1805,12 @@ function AddProductPageContent() {
               colorData.sizeStocks[sizeValue.value] = variant.stock || '0';
               if (!colorData.sizePrices) colorData.sizePrices = {};
               colorData.sizePrices[sizeValue.value] = variant.price || '0';
+              
+              // Add size attribute value's imageUrl if it exists
+              if (sizeValue.imageUrl) {
+                colorData.images.push(sizeValue.imageUrl);
+                console.log('✅ [ADMIN] Added size attribute value imageUrl:', sizeValue.imageUrl);
+              }
             }
           });
           
@@ -1803,11 +1820,58 @@ function AddProductPageContent() {
           }
           
           colors.push(colorData);
+        } else {
+          // Handle non-color, non-size attributes (e.g., material)
+          // Collect all selected attribute values from other attributes
+          const otherAttributeIds = Array.from(selectedAttributesForVariants).filter(
+            attrId => attrId !== colorAttribute?.id && attrId !== sizeAttribute?.id
+          );
+          
+          if (otherAttributeIds.length > 0) {
+            const colorData: ColorData = {
+              colorValue: '',
+              colorLabel: '',
+              images: [],
+              stock: variant.stock || '0',
+              sizes: [],
+              sizeStocks: {},
+            };
+            
+            // Collect images from all selected attribute values
+            otherAttributeIds.forEach((attributeId) => {
+              const attribute = attributes.find(a => a.id === attributeId);
+              if (!attribute) return;
+              
+              const selectedValueIds = variant.selectedValueIds.filter(id => 
+                attribute.values.some(v => v.id === id)
+              );
+              
+              selectedValueIds.forEach((valueId) => {
+                const value = attribute.values.find(v => v.id === valueId);
+                if (value && value.imageUrl) {
+                  colorData.images.push(value.imageUrl);
+                  console.log('✅ [ADMIN] Added attribute value imageUrl from', attribute.key, ':', value.imageUrl);
+                }
+              });
+            });
+            
+            // Add variant image if exists
+            if (variant.image) {
+              colorData.images.push(variant.image);
+            }
+            
+            if (colorData.images.length > 0 || variant.stock) {
+              colors.push(colorData);
+            }
+          }
         }
         
-        // Add variant image to first color's images if variant has image
+        // Add variant image to first color's images if variant has image and not already added
         if (variant.image && colors.length > 0) {
-          colors[0].images.push(variant.image);
+          const firstColor = colors[0];
+          if (!firstColor.images.includes(variant.image)) {
+            firstColor.images.push(variant.image);
+          }
         }
         
         // Create variant
@@ -1846,13 +1910,6 @@ function AddProductPageContent() {
         const variantIndex = formData.variants.indexOf(variant) + 1;
         
         // Skip base price validation as we now use color-specific prices
-        
-        // Validate that at least one color is selected
-        if (!variant.colors || variant.colors.length === 0) {
-          alert(t('admin.products.add.variantColorRequired').replace('{index}', variantIndex.toString()));
-          setLoading(false);
-          return;
-        }
         
         // Validate SKU - must be unique within product
         const variantSku = variant.sku ? variant.sku.trim() : '';
@@ -1978,15 +2035,9 @@ function AddProductPageContent() {
         // Получаем цвета из новой структуры ColorData
         const colorDataArray = variant.colors || [];
 
-        if (colorDataArray.length === 0) {
-          console.error('❌ [ADMIN] Variant has no colors:', variant);
-          alert(`Variant ${formData.variants.indexOf(variant) + 1}: Please add at least one color`);
-          setLoading(false);
-          return;
-        }
-
-        // Process each color
-        colorDataArray.forEach((colorData, colorIndex) => {
+        // Process each color (colors are optional now)
+        if (colorDataArray.length > 0) {
+          colorDataArray.forEach((colorData, colorIndex) => {
           const colorSizes = colorData.sizes || [];
           const colorSizeStocks = colorData.sizeStocks || {};
 
@@ -2081,7 +2132,7 @@ function AddProductPageContent() {
               ...baseVariantData,
               price: finalPrice,
               compareAtPrice: finalCompareAtPrice,
-              color: colorData.colorValue,
+              color: colorData.colorValue && colorData.colorValue.trim() !== '' ? colorData.colorValue : undefined,
               stock: parseInt(stockForVariant) || 0,
               sku: finalSku,
               imageUrl: variantImageUrl,
@@ -2089,6 +2140,44 @@ function AddProductPageContent() {
             });
           }
         });
+        } else {
+          // No colors - create variant without color
+          // But check if we have images from non-color attributes
+          const finalSku = variant.sku ? variant.sku.trim() : undefined;
+          const generatedSku = finalSku || (formData.slug ? `${formData.slug.toUpperCase()}-${Date.now()}` : undefined);
+          
+          // Check if we have any images from attribute values (for non-color, non-size attributes)
+          let variantImageUrl: string | undefined = undefined;
+          if (selectedAttributesForVariants.size > 0) {
+            const allAttributeImages: string[] = [];
+            Array.from(selectedAttributesForVariants).forEach((attributeId) => {
+              const attribute = attributes.find(a => a.id === attributeId);
+              if (!attribute || attribute.key === 'color' || attribute.key === 'size') return;
+              
+              // Get selected value IDs for this attribute from generatedVariants
+              // Since we're in the old variant format, we need to check if there are any selected values
+              // For now, we'll collect images from all values of this attribute if it's selected
+              attribute.values.forEach((value) => {
+                if (value.imageUrl) {
+                  allAttributeImages.push(value.imageUrl);
+                }
+              });
+            });
+            
+            if (allAttributeImages.length > 0) {
+              variantImageUrl = allAttributeImages.join(',');
+              console.log('✅ [ADMIN] Added images from non-color attributes to variant:', variantImageUrl);
+            }
+          }
+          
+          variants.push({
+            ...baseVariantData,
+            color: undefined,
+            stock: 0,
+            sku: generatedSku,
+            imageUrl: variantImageUrl,
+          });
+        }
       });
 
       // Final validation - ensure all SKUs are unique
@@ -2129,18 +2218,7 @@ function AddProductPageContent() {
         console.log('ℹ️ [VALIDATION] Size validation skipped (category does not require sizes)');
       }
       
-      // Final validation - ensure all variants have at least one color
-      const hasColorInFinalVariants = variants.some(
-        (variant) => variant.color && variant.color.trim() !== ""
-      );
-      
-      if (!hasColorInFinalVariants) {
-        console.error('❌ [VALIDATION] Final color validation failed. Variants:', variants);
-        alert('At least one color is required for product variants');
-        setLoading(false);
-        return;
-      }
-      console.log('✅ [VALIDATION] Final color validation passed');
+      // Colors are now optional - no validation needed
 
       // Collect attribute IDs from variants (color and size attributes)
       const attributeIdsSet = new Set<string>();
@@ -3003,12 +3081,43 @@ function AddProductPageContent() {
                       {Array.from(selectedAttributesForVariants).map((attributeId) => {
                         const attribute = attributes.find(a => a.id === attributeId);
                         if (!attribute) return null;
+                        
+                        // Get selected values for this attribute to show preview
+                        const selectedValueIds = selectedAttributeValueIds[attributeId] || [];
+                        const selectedValues = selectedValueIds
+                          .map(id => attribute.values.find(v => v.id === id))
+                          .filter((v): v is NonNullable<typeof v> => v !== null);
+                        
+                        // Get first selected value's image if available
+                        const previewImage = selectedValues.find(v => v.imageUrl)?.imageUrl;
+                        const isColor = attribute.key === 'color';
+                        const previewColor = isColor && selectedValues.length > 0 
+                          ? (selectedValues[0].colors?.[0] || getColorHex(selectedValues[0].label))
+                          : null;
+                        
                         return (
                           <span
                             key={attributeId}
                             className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium border border-blue-200"
                           >
+                            {previewImage ? (
+                              <img
+                                src={previewImage}
+                                alt={attribute.name}
+                                className="w-4 h-4 object-cover rounded border border-gray-300"
+                              />
+                            ) : previewColor ? (
+                              <span
+                                className="inline-block w-4 h-4 rounded-full border border-gray-300"
+                                style={{ backgroundColor: previewColor }}
+                              />
+                            ) : null}
                             {attribute.name}
+                            {selectedValues.length > 0 && (
+                              <span className="text-xs text-blue-600">
+                                ({selectedValues.length})
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => {
@@ -3166,6 +3275,7 @@ function AddProductPageContent() {
                                       label: value.label,
                                       value: value.value,
                                       colorHex: isColor ? (value.colors?.[0] || getColorHex(value.label)) : null,
+                                      imageUrl: value.imageUrl || null,
                                     } : null;
                                   }).filter((v): v is NonNullable<typeof v> => v !== null);
                                   
@@ -3189,12 +3299,18 @@ function AddProductPageContent() {
                                                   key={val.id}
                                                   className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs"
                                                 >
-                                                  {isColor && val.colorHex && (
+                                                  {val.imageUrl ? (
+                                                    <img
+                                                      src={val.imageUrl}
+                                                      alt={val.label}
+                                                      className="w-3 h-3 object-cover rounded border border-gray-300"
+                                                    />
+                                                  ) : isColor && val.colorHex ? (
                                                     <span
                                                       className="inline-block w-3 h-3 rounded-full border border-gray-300"
                                                       style={{ backgroundColor: val.colorHex }}
                                                     />
-                                                  )}
+                                                  ) : null}
                                                   {val.label}
                                                 </span>
                                               ))
@@ -3566,12 +3682,19 @@ function AddProductPageContent() {
                           }}
                           className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0"
                         />
-                        {isColor && valueColorHex && (
+                        {/* Display image, color, or nothing */}
+                        {value.imageUrl ? (
+                          <img
+                            src={value.imageUrl}
+                            alt={value.label}
+                            className="w-8 h-8 object-cover rounded border border-gray-300 flex-shrink-0"
+                          />
+                        ) : isColor && valueColorHex ? (
                           <span
                             className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm flex-shrink-0"
                             style={{ backgroundColor: valueColorHex }}
                           />
-                        )}
+                        ) : null}
                         <span className="text-xs font-medium text-gray-900 text-center">{value.label}</span>
                       </label>
                     );

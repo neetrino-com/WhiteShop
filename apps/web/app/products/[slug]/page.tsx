@@ -64,6 +64,8 @@ interface ProductAttribute {
       id: string;
       value: string;
       label: string;
+      imageUrl?: string | null;
+      colors?: string[] | null;
     }>;
   };
 }
@@ -178,16 +180,49 @@ export default function ProductPage({ params }: ProductPageProps) {
   const images = useMemo(() => {
     if (!product) return [];
     
+    // First, collect all attribute value imageUrls to exclude them from product images
+    const attributeValueImageUrls = new Set<string>();
+    if (product.productAttributes && Array.isArray(product.productAttributes)) {
+      product.productAttributes.forEach((productAttr) => {
+        if (productAttr.attribute?.values && Array.isArray(productAttr.attribute.values)) {
+          productAttr.attribute.values.forEach((val: { imageUrl?: string | null }) => {
+            if (val.imageUrl) {
+              const processed = processImageUrl(val.imageUrl);
+              if (processed) {
+                attributeValueImageUrls.add(processed);
+                // Also add normalized versions for comparison
+                if (processed.startsWith('/')) {
+                  attributeValueImageUrls.add(processed.substring(1));
+                } else {
+                  attributeValueImageUrls.add(`/${processed}`);
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+    
     const allRawImages: any[] = [];
     // 1. Add general product media first
     if (product.media) allRawImages.push(...product.media);
     
-    // 2. Add all variant images
+    // 2. Add all variant images (but filter out attribute value images)
     if (product.variants) {
       product.variants.forEach(v => {
         if (v.imageUrl) {
           const split = smartSplitUrls(v.imageUrl);
-          allRawImages.push(...split);
+          split.forEach((url: string) => {
+            const processed = processImageUrl(url);
+            if (processed) {
+              // Check if this image is an attribute value image
+              const isAttributeImage = attributeValueImageUrls.has(processed) || 
+                                     attributeValueImageUrls.has(processed.startsWith('/') ? processed.substring(1) : `/${processed}`);
+              if (!isAttributeImage) {
+                allRawImages.push(url);
+              }
+            }
+          });
         }
       });
     }
@@ -196,8 +231,17 @@ export default function ProductPage({ params }: ProductPageProps) {
       .map(processImageUrl)
       .filter((url): url is string => url !== null);
     
-    // Return all unique images (no filtering by color anymore)
-    return Array.from(new Set(processedImages));
+    // Filter out any attribute value images that might have been added
+    const filteredImages = processedImages.filter(url => {
+      const normalized = url.startsWith('/') ? url : `/${url}`;
+      const withoutSlash = url.startsWith('/') ? url.substring(1) : url;
+      return !attributeValueImageUrls.has(url) && 
+             !attributeValueImageUrls.has(normalized) && 
+             !attributeValueImageUrls.has(withoutSlash);
+    });
+    
+    // Return all unique images (excluding attribute value images)
+    return Array.from(new Set(filteredImages));
   }, [product, processImageUrl, smartSplitUrls]);
 
   // Helper function to get color hex/rgb from color name
@@ -461,6 +505,8 @@ export default function ProductPage({ params }: ProductPageProps) {
     label: string;
     stock: number;
     variants: ProductVariant[];
+    imageUrl?: string | null;
+    colors?: string[] | null;
   }>>();
 
   if (product?.productAttributes && product.productAttributes.length > 0) {
@@ -502,13 +548,19 @@ export default function ProductPage({ params }: ProductPageProps) {
         }
       });
 
-      const groups = Array.from(valueMap.values()).map((item) => ({
-        valueId: item.valueId,
-        value: item.value,
-        label: item.label,
-        stock: item.variants.reduce((sum, v) => sum + v.stock, 0),
-        variants: item.variants,
-      }));
+      const groups = Array.from(valueMap.values()).map((item) => {
+        // Find the attribute value to get imageUrl and colors
+        const attrValue = productAttr.attribute.values?.find((v: any) => v.id === item.valueId || v.value === item.value);
+        return {
+          valueId: item.valueId,
+          value: item.value,
+          label: item.label,
+          stock: item.variants.reduce((sum, v) => sum + v.stock, 0),
+          variants: item.variants,
+          imageUrl: attrValue?.imageUrl || null,
+          colors: attrValue?.colors || null,
+        };
+      });
 
       attributeGroups.set(attrKey, groups);
     });
@@ -944,22 +996,34 @@ export default function ProductPage({ params }: ProductPageProps) {
                         {attrGroups.map((g) => {
                           const isSelected = selectedColor === g.value.toLowerCase().trim();
                           const isDisabled = g.stock <= 0;
+                          const hasImage = g.imageUrl;
+                          const colorHex = g.colors && Array.isArray(g.colors) && g.colors.length > 0 
+                            ? g.colors[0] 
+                            : getColorValue(g.value);
                           
                           return (
                             <div key={g.valueId || g.value} className="flex flex-col items-center gap-1">
                               <button 
                                 onClick={() => !isDisabled && handleColorSelect(g.value)}
                                 disabled={isDisabled}
-                                className={`w-10 h-10 rounded-full border-2 transition-all ${
+                                className={`w-10 h-10 rounded-full border-2 transition-all overflow-hidden ${
                                   isSelected 
                                     ? 'border-gray-900 ring-2 ring-offset-2 ring-gray-900 scale-110' 
                                     : isDisabled 
                                       ? 'border-gray-100 opacity-30 grayscale cursor-not-allowed' 
                                       : 'border-gray-300 hover:scale-105'
                                 }`}
-                                style={{ backgroundColor: getColorValue(g.value) }} 
+                                style={hasImage ? {} : { backgroundColor: colorHex }}
                                 title={isDisabled ? `${getAttributeLabel(language, attrKey, g.value)} (${t(language, 'product.outOfStock')})` : `${getAttributeLabel(language, attrKey, g.value)}${g.stock > 0 ? ` (${g.stock} ${t(language, 'product.pcs')})` : ''}`} 
-                              />
+                              >
+                                {hasImage ? (
+                                  <img 
+                                    src={g.imageUrl!} 
+                                    alt={g.label}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : null}
+                              </button>
                               {g.stock > 0 && (
                                 <span className="text-xs text-gray-500">{g.stock}</span>
                               )}
@@ -1011,6 +1075,7 @@ export default function ProductPage({ params }: ProductPageProps) {
                           const selectedValueId = selectedAttributeValues.get(attrKey);
                           const isSelected = selectedValueId === g.valueId || (!g.valueId && selectedColor === g.value);
                           const isDisabled = g.stock <= 0;
+                          const hasImage = g.imageUrl;
 
                           return (
                             <button
@@ -1027,7 +1092,7 @@ export default function ProductPage({ params }: ProductPageProps) {
                                 }
                               }}
                               disabled={isDisabled}
-                              className={`px-4 py-2 rounded-lg border-2 transition-all ${
+                              className={`px-4 py-2 rounded-lg border-2 transition-all flex items-center gap-2 ${
                                 isSelected
                                   ? 'border-gray-900 bg-gray-50'
                                   : isDisabled
@@ -1035,7 +1100,14 @@ export default function ProductPage({ params }: ProductPageProps) {
                                     : 'border-gray-200 hover:border-gray-400'
                               }`}
                             >
-                              {getAttributeLabel(language, attrKey, g.value)}
+                              {hasImage && (
+                                <img 
+                                  src={g.imageUrl!} 
+                                  alt={g.label}
+                                  className="w-6 h-6 object-cover rounded border border-gray-300"
+                                />
+                              )}
+                              <span>{getAttributeLabel(language, attrKey, g.value)}</span>
                             </button>
                           );
                         })}

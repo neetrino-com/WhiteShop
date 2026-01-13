@@ -1479,6 +1479,8 @@ class ProductsService {
                 id: val.id,
                 value: val.value,
                 label: valTranslation?.label || val.value,
+                imageUrl: val.imageUrl || null,
+                colors: val.colors || null,
               };
             }) : [],
           },

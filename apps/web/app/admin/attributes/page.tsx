@@ -9,6 +9,7 @@ import { getAdminMenuTABS } from '../admin-menu.config';
 import { useTranslation } from '../../../lib/i18n-client';
 import { showToast } from '../../../components/Toast';
 import { ColorPaletteSelector } from '../../../components/ColorPaletteSelector';
+import { getColorHex } from '../../../lib/colorMap';
 
 interface AttributeValue {
   id: string;
@@ -548,7 +549,23 @@ function AttributesPageContent() {
                               <div key={value.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                                 {/* Value Card */}
                                 <div className="flex items-center justify-between p-3 hover:bg-gray-50 transition-colors">
-                                  <span className="text-sm font-medium text-gray-900 flex-1">{value.label}</span>
+                                  <div className="flex items-center gap-2 flex-1">
+                                    {/* Color swatch or image */}
+                                    {value.colors && value.colors.length > 0 ? (
+                                      <span
+                                        className="inline-block w-5 h-5 rounded-full border border-gray-300 flex-shrink-0"
+                                        style={{ backgroundColor: value.colors[0] }}
+                                        title={value.colors[0]}
+                                      />
+                                    ) : value.imageUrl ? (
+                                      <img
+                                        src={value.imageUrl}
+                                        alt={value.label}
+                                        className="w-5 h-5 object-cover rounded border border-gray-300 flex-shrink-0"
+                                      />
+                                    ) : null}
+                                    <span className="text-sm font-medium text-gray-900">{value.label}</span>
+                                  </div>
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => toggleValueEdit(attribute.id, value)}
