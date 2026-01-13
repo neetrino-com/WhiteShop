@@ -187,7 +187,6 @@ function AddProductPageContent() {
   const mainProductImageInputRef = useRef<HTMLInputElement | null>(null);
   const variantImageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const attributesDropdownRef = useRef<HTMLDivElement | null>(null);
-  const valueDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [attributesDropdownOpen, setAttributesDropdownOpen] = useState(false);
   const [colorImageTarget, setColorImageTarget] = useState<{ variantId: string; colorValue: string } | null>(null);
   const [imageUploadLoading, setImageUploadLoading] = useState(false);
@@ -209,8 +208,8 @@ function AddProductPageContent() {
   // New Multi-Attribute Variant Builder state
   const [selectedAttributesForVariants, setSelectedAttributesForVariants] = useState<Set<string>>(new Set()); // Selected attribute IDs
   const [selectedAttributeValueIds, setSelectedAttributeValueIds] = useState<Record<string, string[]>>({}); // Key: attributeId, Value: array of selected value IDs
-  // State for managing open dropdowns in the variants table
-  const [openValueDropdown, setOpenValueDropdown] = useState<string | null>(null); // attributeId of the open dropdown
+  // State for managing value selection modal
+  const [openValueModal, setOpenValueModal] = useState<{ variantId: string; attributeId: string } | null>(null);
   const [generatedVariants, setGeneratedVariants] = useState<Array<{
       id: string; // Unique ID for this variant
     selectedValueIds: string[]; // Array of selected value IDs from all attributes
@@ -246,28 +245,6 @@ function AddProductPageContent() {
     };
   }, [attributesDropdownOpen]);
 
-  // Close value dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (openValueDropdown) {
-        const ref = valueDropdownRefs.current[openValueDropdown];
-        if (ref && !ref.contains(event.target as Node)) {
-          setOpenValueDropdown(null);
-        }
-      }
-    };
-
-    if (openValueDropdown) {
-      // Use setTimeout to avoid immediate closure
-      setTimeout(() => {
-        document.addEventListener('mousedown', handleClickOutside);
-      }, 0);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [openValueDropdown]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -3197,11 +3174,11 @@ function AddProductPageContent() {
                                   
                                   return (
                                     <td key={attributeId} className="px-2 py-2 whitespace-nowrap">
-                                      <div className="relative" ref={(el) => { valueDropdownRefs.current[cellDropdownKey] = el; }}>
+                                      <div className="relative">
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            setOpenValueDropdown(openValueDropdown === cellDropdownKey ? null : cellDropdownKey);
+                                            setOpenValueModal({ variantId: variant.id, attributeId });
                                           }}
                                           className="w-full text-left flex items-center gap-1 p-1.5 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         >
@@ -3226,7 +3203,7 @@ function AddProductPageContent() {
                                             )}
                                           </div>
                                           <svg
-                                            className={`w-3 h-3 text-gray-400 transition-transform flex-shrink-0 ${openValueDropdown === cellDropdownKey ? 'rotate-180' : ''}`}
+                                            className="w-3 h-3 text-gray-400 transition-transform flex-shrink-0"
                                             fill="none"
                                             stroke="currentColor"
                                             viewBox="0 0 24 24"
@@ -3235,123 +3212,6 @@ function AddProductPageContent() {
                                           </svg>
                                         </button>
                                         
-                                        {openValueDropdown === cellDropdownKey && attribute && (
-                                          <div className="absolute z-[100] mt-1 w-auto min-w-64 bg-white border border-gray-300 rounded-lg shadow-lg variant-builder-dropdown" style={{ maxHeight: 'none', overflowY: 'visible' }}>
-                                            <div className="p-2" style={{ overflowY: 'visible' }}>
-                                              {/* "All" option */}
-                                              <label className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-gray-50 mb-2">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={attribute.values.length > 0 && selectedValueIds.length === attribute.values.length}
-                                                  onChange={(e) => {
-                                                    if (e.target.checked) {
-                                                      // Select all values
-                                                      const allValueIds = attribute.values.map(v => v.id);
-                                                      // Add to variant's selectedValueIds (merge with existing)
-                                                      const currentIds = variant.selectedValueIds;
-                                                      const newIds = [...new Set([...currentIds, ...allValueIds])];
-                                                      
-                                                      setSelectedAttributeValueIds(prev => ({
-                                                        ...prev,
-                                                        [attributeId]: allValueIds,
-                                                      }));
-                                                      
-                                                      // Update variant - merge with existing selectedValueIds
-                                                      setGeneratedVariants(prev => prev.map(v => 
-                                                        v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
-                                                      ));
-                                                    } else {
-                                                      // Deselect all values for this attribute
-                                                      const valueIdsToRemove = attribute.values.map(v => v.id);
-                                                      const newIds = variant.selectedValueIds.filter(id => !valueIdsToRemove.includes(id));
-                                                      
-                                                      setSelectedAttributeValueIds(prev => ({
-                                                        ...prev,
-                                                        [attributeId]: [],
-                                                      }));
-                                                      
-                                                      setGeneratedVariants(prev => prev.map(v => 
-                                                        v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
-                                                      ));
-                                                    }
-                                                  }}
-                                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                />
-                                                <span className="text-sm font-medium text-gray-900">All</span>
-                                              </label>
-                                              
-                                              <div className="border-t border-gray-200 my-2"></div>
-                                              
-                                              {/* Individual value checkboxes - horizontal layout - single row */}
-                                              <div className="flex flex-nowrap gap-2 overflow-x-auto">
-                                                {attribute.values.map((value) => {
-                                                  const isSelected = variant.selectedValueIds.includes(value.id);
-                                                  const valueColorHex = isColor && value.colors && value.colors.length > 0 
-                                                    ? value.colors[0] 
-                                                    : isColor 
-                                                      ? getColorHex(value.label) 
-                                                      : null;
-                                                  
-                                                  return (
-                                                    <label
-                                                      key={value.id}
-                                                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
-                                                        isSelected
-                                                          ? 'bg-blue-50 border-2 border-blue-600'
-                                                          : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
-                                                      }`}
-                                                    >
-                                                      <input
-                                                        type="checkbox"
-                                                        checked={isSelected}
-                                                        onChange={(e) => {
-                                                          const currentIds = variant.selectedValueIds;
-                                                          let newIds: string[];
-                                                          
-                                                          if (e.target.checked) {
-                                                            // Add value if not already selected
-                                                            newIds = [...currentIds, value.id];
-                                                          } else {
-                                                            // Remove value
-                                                            newIds = currentIds.filter(id => id !== value.id);
-                                                          }
-                                                          
-                                                          // Update selectedAttributeValueIds for this attribute
-                                                          const currentAttrIds = selectedAttributeValueIds[attributeId] || [];
-                                                          let newAttrIds: string[];
-                                                          if (e.target.checked) {
-                                                            newAttrIds = [...currentAttrIds, value.id];
-                                                          } else {
-                                                            newAttrIds = currentAttrIds.filter(id => id !== value.id);
-                                                          }
-                                                          
-                                                          // Update variant first (to preserve dropdown state)
-                                                          setGeneratedVariants(prev => prev.map(v => 
-                                                            v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
-                                                          ));
-                                                          
-                                                          // Then update selectedAttributeValueIds (this will trigger useEffect but variant is already updated)
-                                                          setSelectedAttributeValueIds(prev => ({
-                                                            ...prev,
-                                                            [attributeId]: newAttrIds,
-                                                          }));
-                                                        }}
-                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0"
-                                                      />
-                                                      {isColor && valueColorHex && (
-                                                        <span
-                                                          className="inline-block w-5 h-5 rounded-full border-2 border-gray-300 shadow-sm flex-shrink-0"
-                                                          style={{ backgroundColor: valueColorHex }}
-                                                        />
-                                                      )}
-                                                      <span className="text-sm text-gray-900 whitespace-nowrap">{value.label}</span>
-                                                    </label>
-                                                  );
-                                                })}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
                                       </div>
                                     </td>
                                   );
@@ -3566,6 +3426,173 @@ function AddProductPageContent() {
         </Card>
         </div>
       </div>
+
+      {/* Value Selection Modal */}
+      {openValueModal && (() => {
+        const variant = generatedVariants.find(v => v.id === openValueModal.variantId);
+        const attribute = attributes.find(a => a.id === openValueModal.attributeId);
+        
+        if (!variant || !attribute) return null;
+        
+        const isColor = attribute.key === 'color';
+        const selectedValueIds = variant.selectedValueIds.filter(id => {
+          return attribute.values.some(v => v.id === id);
+        });
+        
+        return (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            onClick={() => setOpenValueModal(null)}
+          >
+            <div
+              className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {t('admin.products.add.selectValues')} {attribute.name}
+                </h3>
+                <button
+                  onClick={() => setOpenValueModal(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Close"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6">
+                {/* "All" option */}
+                <label className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-gray-50 mb-3 border border-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={attribute.values.length > 0 && selectedValueIds.length === attribute.values.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        // Select all values
+                        const allValueIds = attribute.values.map(v => v.id);
+                        // Add to variant's selectedValueIds (merge with existing)
+                        const currentIds = variant.selectedValueIds;
+                        const newIds = [...new Set([...currentIds, ...allValueIds])];
+                        
+                        setSelectedAttributeValueIds(prev => ({
+                          ...prev,
+                          [openValueModal.attributeId]: allValueIds,
+                        }));
+                        
+                        // Update variant - merge with existing selectedValueIds
+                        setGeneratedVariants(prev => prev.map(v => 
+                          v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
+                        ));
+                      } else {
+                        // Deselect all values for this attribute
+                        const valueIdsToRemove = attribute.values.map(v => v.id);
+                        const newIds = variant.selectedValueIds.filter(id => !valueIdsToRemove.includes(id));
+                        
+                        setSelectedAttributeValueIds(prev => ({
+                          ...prev,
+                          [openValueModal.attributeId]: [],
+                        }));
+                        
+                        setGeneratedVariants(prev => prev.map(v => 
+                          v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
+                        ));
+                      }
+                    }}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-900">All</span>
+                </label>
+                
+                <div className="border-t border-gray-200 my-3"></div>
+                
+                {/* Individual value checkboxes - grid layout */}
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+                  {attribute.values.map((value) => {
+                    const isSelected = variant.selectedValueIds.includes(value.id);
+                    const valueColorHex = isColor && value.colors && value.colors.length > 0 
+                      ? value.colors[0] 
+                      : isColor 
+                        ? getColorHex(value.label) 
+                        : null;
+                    
+                    return (
+                      <label
+                        key={value.id}
+                        className={`flex flex-col items-center gap-1.5 p-2 rounded-lg cursor-pointer transition-all border-2 ${
+                          isSelected
+                            ? 'bg-blue-50 border-blue-600'
+                            : 'bg-gray-50 border-transparent hover:bg-gray-100 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            const currentIds = variant.selectedValueIds;
+                            let newIds: string[];
+                            
+                            if (e.target.checked) {
+                              // Add value if not already selected
+                              newIds = [...currentIds, value.id];
+                            } else {
+                              // Remove value
+                              newIds = currentIds.filter(id => id !== value.id);
+                            }
+                            
+                            // Update selectedAttributeValueIds for this attribute
+                            const currentAttrIds = selectedAttributeValueIds[openValueModal.attributeId] || [];
+                            let newAttrIds: string[];
+                            if (e.target.checked) {
+                              newAttrIds = [...currentAttrIds, value.id];
+                            } else {
+                              newAttrIds = currentAttrIds.filter(id => id !== value.id);
+                            }
+                            
+                            // Update variant first (to preserve dropdown state)
+                            setGeneratedVariants(prev => prev.map(v => 
+                              v.id === variant.id ? { ...v, selectedValueIds: newIds } : v
+                            ));
+                            
+                            // Then update selectedAttributeValueIds (this will trigger useEffect but variant is already updated)
+                            setSelectedAttributeValueIds(prev => ({
+                              ...prev,
+                              [openValueModal.attributeId]: newAttrIds,
+                            }));
+                          }}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0"
+                        />
+                        {isColor && valueColorHex && (
+                          <span
+                            className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm flex-shrink-0"
+                            style={{ backgroundColor: valueColorHex }}
+                          />
+                        )}
+                        <span className="text-xs font-medium text-gray-900 text-center">{value.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 sticky bottom-0 bg-white">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOpenValueModal(null)}
+                >
+                  {t('admin.common.close')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
