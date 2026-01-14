@@ -5,6 +5,7 @@ import type { FormEvent } from 'react';
 import { Button } from '@shop/ui';
 import { useAuth } from '../lib/auth/AuthContext';
 import { useTranslation } from '../lib/i18n-client';
+import { apiClient } from '../lib/api-client';
 
 interface Review {
   id: string;
@@ -16,10 +17,11 @@ interface Review {
 }
 
 interface ProductReviewsProps {
-  productId: string;
+  productId?: string; // For backward compatibility
+  productSlug?: string; // Preferred: use slug for API calls
 }
 
-export function ProductReviews({ productId }: ProductReviewsProps) {
+export function ProductReviews({ productId, productSlug }: ProductReviewsProps) {
   const { isLoggedIn, user } = useAuth();
   const { t } = useTranslation();
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -29,19 +31,35 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
   const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
 
   useEffect(() => {
     loadReviews();
-  }, [productId]);
+  }, [productId, productSlug]);
 
-  const loadReviews = () => {
+  const loadReviews = async () => {
     try {
-      const stored = localStorage.getItem(`reviews_${productId}`);
-      if (stored) {
-        setReviews(JSON.parse(stored));
+      // Use slug if available, otherwise fall back to productId
+      const identifier = productSlug || productId;
+      if (!identifier) {
+        console.warn('⚠️ [PRODUCT REVIEWS] No product identifier provided');
+        setReviews([]);
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error('Error loading reviews:', error);
+
+      console.log('📝 [PRODUCT REVIEWS] Loading reviews for product:', identifier);
+      setLoading(true);
+      const data = await apiClient.get<Review[]>(`/api/v1/products/${identifier}/reviews`);
+      console.log('✅ [PRODUCT REVIEWS] Reviews loaded:', data?.length || 0);
+      setReviews(data || []);
+    } catch (error: any) {
+      console.error('❌ [PRODUCT REVIEWS] Error loading reviews:', error);
+      // If 404, product might not have reviews yet - that's okay
+      if (error.status !== 404) {
+        console.error('Failed to load reviews:', error);
+      }
+      setReviews([]);
     } finally {
       setLoading(false);
     }
@@ -68,22 +86,24 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
     setSubmitting(true);
 
     try {
-      const userName = user?.firstName && user?.lastName
-        ? `${user.firstName} ${user.lastName}`
-        : user?.firstName || user?.lastName || user?.email || 'Anonymous';
+      // Use slug if available, otherwise fall back to productId
+      const identifier = productSlug || productId;
+      if (!identifier) {
+        alert(t('common.reviews.submitError'));
+        return;
+      }
 
-      const newReview: Review = {
-        id: Date.now().toString(),
-        userId: user?.id || '',
-        userName,
+      console.log('📝 [PRODUCT REVIEWS] Submitting review:', { identifier, rating, commentLength: comment.length });
+      
+      const newReview = await apiClient.post<Review>(`/api/v1/products/${identifier}/reviews`, {
         rating,
         comment: comment.trim(),
-        createdAt: new Date().toISOString(),
-      };
+      });
 
-      const updatedReviews = [newReview, ...reviews];
-      localStorage.setItem(`reviews_${productId}`, JSON.stringify(updatedReviews));
-      setReviews(updatedReviews);
+      console.log('✅ [PRODUCT REVIEWS] Review submitted successfully:', newReview.id);
+
+      // Add new review to the list
+      setReviews([newReview, ...reviews]);
       setRating(0);
       setComment('');
       setShowForm(false);
@@ -92,9 +112,50 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('review-updated'));
       }
-    } catch (error) {
-      console.error('Error submitting review:', error);
-      alert(t('common.reviews.submitError'));
+    } catch (error: any) {
+      console.error('❌ [PRODUCT REVIEWS] Error submitting review:', error);
+      
+      // Handle specific error cases
+      if (error.status === 409) {
+        // User already has a review - load it and show in edit mode
+        try {
+          const identifier = productSlug || productId;
+          if (!identifier) {
+            alert(t('common.reviews.alreadyReviewed') || 'You have already reviewed this product');
+            return;
+          }
+
+          console.log('📝 [PRODUCT REVIEWS] Loading existing review for user');
+          const existingReview = await apiClient.get<Review>(`/api/v1/products/${identifier}/reviews?my=true`);
+          
+          if (existingReview) {
+            // Add to reviews list if not already there
+            const reviewExists = reviews.some(r => r.id === existingReview.id);
+            if (!reviewExists) {
+              setReviews([existingReview, ...reviews]);
+            }
+            
+            // Show in edit mode
+            handleEditReview(existingReview);
+            alert(t('common.reviews.alreadyReviewed') || 'You have already reviewed this product. You can update your review below.');
+          } else {
+            alert(t('common.reviews.alreadyReviewed') || 'You have already reviewed this product');
+          }
+        } catch (loadError: any) {
+          console.error('❌ [PRODUCT REVIEWS] Error loading existing review:', loadError);
+          // Fallback to checking local reviews
+          if (userReview) {
+            handleEditReview(userReview);
+            alert(t('common.reviews.alreadyReviewed') || 'You have already reviewed this product. You can update your review below.');
+          } else {
+            alert(t('common.reviews.alreadyReviewed') || 'You have already reviewed this product');
+          }
+        }
+      } else if (error.status === 401) {
+        alert(t('common.reviews.loginRequired'));
+      } else {
+        alert(t('common.reviews.submitError'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -112,6 +173,9 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
       : 0,
   }));
 
+  // Get user's review if exists
+  const userReview = user ? reviews.find(r => r.userId === user.id) : null;
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     // Use browser's default locale for date formatting
@@ -120,6 +184,76 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
       month: 'long',
       day: 'numeric',
     });
+  };
+
+  const handleEditReview = (review: Review) => {
+    setEditingReviewId(review.id);
+    setRating(review.rating);
+    setComment(review.comment || '');
+    setShowForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingReviewId(null);
+    setRating(0);
+    setComment('');
+    setShowForm(false);
+  };
+
+  const handleUpdateReview = async (e: FormEvent) => {
+    e.preventDefault();
+    
+    if (!isLoggedIn || !editingReviewId) {
+      return;
+    }
+
+    if (rating === 0) {
+      alert(t('common.reviews.ratingRequired'));
+      return;
+    }
+
+    if (!comment.trim()) {
+      alert(t('common.reviews.commentRequired'));
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      console.log('📝 [PRODUCT REVIEWS] Updating review:', { reviewId: editingReviewId, rating, commentLength: comment.length });
+      
+      const updatedReview = await apiClient.put<Review>(`/api/v1/reviews/${editingReviewId}`, {
+        rating,
+        comment: comment.trim(),
+      });
+
+      console.log('✅ [PRODUCT REVIEWS] Review updated successfully:', updatedReview.id);
+
+      // Update review in the list
+      setReviews(reviews.map(r => r.id === editingReviewId ? updatedReview : r));
+      setRating(0);
+      setComment('');
+      setEditingReviewId(null);
+      setShowForm(false);
+      
+      // Dispatch event to update rating on product page
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('review-updated'));
+      }
+    } catch (error: any) {
+      console.error('❌ [PRODUCT REVIEWS] Error updating review:', error);
+      
+      // Handle specific error cases
+      if (error.status === 401) {
+        alert(t('common.reviews.loginRequired'));
+      } else if (error.status === 403) {
+        alert('You can only update your own reviews');
+      } else {
+        alert(t('common.reviews.submitError'));
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -213,9 +347,9 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
 
         {/* Review Form */}
         {showForm && (
-          <form onSubmit={handleSubmit} className="mb-8 p-6 bg-gray-50 rounded-lg">
+          <form onSubmit={editingReviewId ? handleUpdateReview : handleSubmit} className="mb-8 p-6 bg-gray-50 rounded-lg">
             <h3 className="text-xl font-semibold text-gray-900 mb-4">
-              {t('common.reviews.writeReview')}
+              {editingReviewId ? 'Update Your Review' : t('common.reviews.writeReview')}
             </h3>
 
             {/* Rating Selector */}
@@ -273,12 +407,14 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
               >
                 {submitting
                   ? t('common.reviews.submitting')
-                  : t('common.reviews.submitReview')}
+                  : editingReviewId
+                    ? 'Update Review'
+                    : t('common.reviews.submitReview')}
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
+                onClick={editingReviewId ? handleCancelEdit : () => {
                   setShowForm(false);
                   setRating(0);
                   setComment('');
@@ -317,7 +453,7 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
           {reviews.map((review) => (
             <div key={review.id} className="border-b border-gray-200 pb-6 last:border-b-0">
               <div className="flex items-start justify-between mb-2">
-                <div>
+                <div className="flex-1">
                   <div className="font-semibold text-gray-900 mb-1">
                     {review.userName}
                   </div>
@@ -343,6 +479,17 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
                     </span>
                   </div>
                 </div>
+                {user && review.userId === user.id && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleEditReview(review)}
+                    className="ml-4"
+                  >
+                    Edit
+                  </Button>
+                )}
               </div>
               <p className="text-gray-700 whitespace-pre-wrap">{review.comment}</p>
             </div>

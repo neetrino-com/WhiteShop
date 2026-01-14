@@ -412,18 +412,36 @@ export default function ProductPage({ params }: ProductPageProps) {
   }, [images.length, currentImageIndex]);
 
   useEffect(() => {
-    if (!product) return;
-    const loadReviews = () => {
-      if (typeof window === 'undefined') return;
+    if (!product || !slug) return;
+    
+    const loadReviews = async () => {
       try {
-        const stored = localStorage.getItem(`reviews_${product.id}`);
-        if (stored) setReviews(JSON.parse(stored));
-      } catch (error) { console.error('Error loading reviews:', error); }
+        console.log('📝 [PRODUCT PAGE] Loading reviews for product slug:', slug);
+        const data = await apiClient.get<Array<{ rating: number }>>(`/api/v1/products/${slug}/reviews`);
+        console.log('✅ [PRODUCT PAGE] Reviews loaded:', data?.length || 0);
+        setReviews(data || []);
+      } catch (error: any) {
+        console.error('❌ [PRODUCT PAGE] Error loading reviews:', error);
+        // If 404, product might not have reviews yet - that's okay
+        if (error.status !== 404) {
+          console.error('Failed to load reviews:', error);
+        }
+        setReviews([]);
+      }
     };
+    
     loadReviews();
-    window.addEventListener('review-updated', loadReviews);
-    return () => window.removeEventListener('review-updated', loadReviews);
-  }, [product?.id]);
+    
+    // Listen for review updates
+    const handleReviewUpdate = () => {
+      loadReviews();
+    };
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('review-updated', handleReviewUpdate);
+      return () => window.removeEventListener('review-updated', handleReviewUpdate);
+    }
+  }, [product?.id, slug]);
 
   const averageRating = reviews.length > 0
     ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
@@ -1739,7 +1757,7 @@ export default function ProductPage({ params }: ProductPageProps) {
       )}
 
       <div id="product-reviews" className="mt-24 scroll-mt-24">
-        <ProductReviews productId={product.id} />
+        <ProductReviews productSlug={slug} productId={product.id} />
       </div>
       <div className="mt-16">
         <RelatedProducts categorySlug={product.categories?.[0]?.slug} currentProductId={product.id} />

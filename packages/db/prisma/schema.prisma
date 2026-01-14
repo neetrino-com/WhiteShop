@@ -32,6 +32,7 @@ model User {
   // Relations
   carts  Cart[]
   orders Order[]
+  reviews ProductReview[]
 
   @@index([deletedAt])
   @@map("users")
@@ -216,9 +217,10 @@ model Product {
   updatedAt         DateTime             @updatedAt
 
   // Relations
-  brand      Brand?     @relation(fields: [brandId], references: [id])
-  categories Category[] @relation("ProductCategories")
+  brand      Brand?         @relation(fields: [brandId], references: [id])
+  categories Category[]     @relation("ProductCategories")
   cartItems  CartItem[]
+  reviews    ProductReview[]
 
   @@index([brandId])
   @@index([published, publishedAt])
@@ -461,6 +463,30 @@ model OrderEvent {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("order_events")
+}
+
+// ============================================
+// PRODUCT REVIEW MODEL
+// ============================================
+model ProductReview {
+  id        String   @id @default(cuid())
+  productId String
+  userId    String
+  rating    Int      // 1-5 stars
+  comment   String?  @db.Text
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([userId])
+  @@index([published, createdAt(sort: Desc)])
+  @@unique([productId, userId]) // One review per user per product
+  @@map("product_reviews")
 }
 
 // ============================================

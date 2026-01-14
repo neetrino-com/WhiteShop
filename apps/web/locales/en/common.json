@@ -99,6 +99,7 @@
     "ratingRequired": "Please select a rating",
     "commentRequired": "Please write a comment",
     "submitError": "Failed to submit review",
+    "alreadyReviewed": "You have already reviewed this product",
     "noReviews": "No reviews yet. Be the first to review this product!",
     "review": "review",
     "reviews": "reviews",
