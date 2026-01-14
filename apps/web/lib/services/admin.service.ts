@@ -1781,7 +1781,7 @@ class AdminService {
     const settings = await db.settings.findMany({
       where: {
         key: {
-          in: ['globalDiscount', 'categoryDiscounts', 'brandDiscounts', 'defaultCurrency'],
+          in: ['globalDiscount', 'categoryDiscounts', 'brandDiscounts', 'defaultCurrency', 'currencyRates'],
         },
       },
     });
@@ -1790,12 +1790,23 @@ class AdminService {
     const categoryDiscountsSetting = settings.find((s: { key: string; value: string }) => s.key === 'categoryDiscounts');
     const brandDiscountsSetting = settings.find((s: { key: string; value: string }) => s.key === 'brandDiscounts');
     const defaultCurrencySetting = settings.find((s: { key: string; value: string }) => s.key === 'defaultCurrency');
+    const currencyRatesSetting = settings.find((s: { key: string; value: string }) => s.key === 'currencyRates');
+    
+    // Default currency rates (fallback)
+    const defaultCurrencyRates = {
+      USD: 1,
+      AMD: 400,
+      EUR: 0.92,
+      RUB: 90,
+      GEL: 2.7,
+    };
     
     return {
       globalDiscount: globalDiscountSetting ? Number(globalDiscountSetting.value) : 0,
       categoryDiscounts: categoryDiscountsSetting ? (categoryDiscountsSetting.value as Record<string, number>) : {},
       brandDiscounts: brandDiscountsSetting ? (brandDiscountsSetting.value as Record<string, number>) : {},
       defaultCurrency: defaultCurrencySetting ? (defaultCurrencySetting.value as string) : 'USD',
+      currencyRates: currencyRatesSetting ? (currencyRatesSetting.value as Record<string, number>) : defaultCurrencyRates,
     };
   }
 
@@ -1873,6 +1884,23 @@ class AdminService {
         },
       });
       console.log('✅ [ADMIN SERVICE] Default currency updated:', currencyValue);
+    }
+    
+    // Update currency rates
+    if (data.currencyRates !== undefined) {
+      await db.settings.upsert({
+        where: { key: 'currencyRates' },
+        update: {
+          value: data.currencyRates,
+          updatedAt: new Date(),
+        },
+        create: {
+          key: 'currencyRates',
+          value: data.currencyRates,
+          description: 'Currency exchange rates relative to USD (USD, AMD, EUR, RUB, GEL)',
+        },
+      });
+      console.log('✅ [ADMIN SERVICE] Currency rates updated:', data.currencyRates);
     }
     
     return { success: true };

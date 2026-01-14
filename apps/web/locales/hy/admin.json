@@ -499,7 +499,11 @@
     "savedSuccess": "Կարգավորումները հաջողությամբ պահվեցին:",
     "errorSaving": "Սխալ: {message}",
     "siteNamePlaceholder": "Իմ խանութ",
-    "siteDescriptionPlaceholder": "Ձեր խանութի նկարագրությունը"
+    "siteDescriptionPlaceholder": "Ձեր խանութի նկարագրությունը",
+    "currencyRates": "Արտարժույթի փոխարժեքներ",
+    "currencyRatesDescription": "Սահմանեք արտարժույթի փոխարժեքները USD-ի նկատմամբ: Այս փոխարժեքները օգտագործվում են ապրանքների գների փոխարկման համար:",
+    "baseCurrency": "Հիմնական արժույթ (միշտ 1)",
+    "rateToUSD": "Փոխարժեք USD-ի նկատմամբ (1 USD = նշված արժեք)"
   },
   "quickSettings": {
     "title": "Արագ կարգավորումներ",

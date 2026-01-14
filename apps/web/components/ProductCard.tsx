@@ -160,10 +160,16 @@ export function ProductCard({ product, viewMode = 'grid-3' }: ProductCardProps) 
     const handleCurrencyUpdate = () => {
       setCurrency(getStoredCurrency());
     };
+    // Listen for currency rates updates to force re-render
+    const handleCurrencyRatesUpdate = () => {
+      setCurrency(getStoredCurrency());
+    };
 
     window.addEventListener('currency-updated', handleCurrencyUpdate);
+    window.addEventListener('currency-rates-updated', handleCurrencyRatesUpdate);
     return () => {
       window.removeEventListener('currency-updated', handleCurrencyUpdate);
+      window.removeEventListener('currency-rates-updated', handleCurrencyRatesUpdate);
     };
   }, []);
 

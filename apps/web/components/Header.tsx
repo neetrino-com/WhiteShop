@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, Suspense } from 'react';
 import type { FormEvent, ReactNode, CSSProperties } from 'react';
-import { getStoredCurrency, setStoredCurrency, type CurrencyCode, CURRENCIES, formatPrice } from '../lib/currency';
+import { getStoredCurrency, setStoredCurrency, type CurrencyCode, CURRENCIES, formatPrice, initializeCurrencyRates, clearCurrencyRatesCache } from '../lib/currency';
 import { useTranslation } from '../lib/i18n-client';
 import { useAuth } from '../lib/auth/AuthContext';
 import { apiClient } from '../lib/api-client';
@@ -568,6 +568,28 @@ export function Header() {
 
     return () => {
       window.removeEventListener('currency-updated', handleCurrencyUpdate);
+    };
+  }, []);
+
+  // Initialize and update currency rates
+  useEffect(() => {
+    // Load currency rates on mount
+    initializeCurrencyRates().catch(console.error);
+
+    // Listen for currency rates updates (when admin changes rates)
+    const handleCurrencyRatesUpdate = () => {
+      console.log('🔄 [HEADER] Currency rates updated, reloading...');
+      clearCurrencyRatesCache();
+      // Force reload to get fresh rates from API
+      initializeCurrencyRates(true).catch(console.error);
+      // Force re-render by dispatching currency-updated event
+      window.dispatchEvent(new Event('currency-updated'));
+    };
+
+    window.addEventListener('currency-rates-updated', handleCurrencyRatesUpdate);
+
+    return () => {
+      window.removeEventListener('currency-rates-updated', handleCurrencyRatesUpdate);
     };
   }, []);
 

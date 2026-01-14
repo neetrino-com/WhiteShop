@@ -366,11 +366,18 @@ export default function ProductPage({ params }: ProductPageProps) {
       // Refetch product when language changes to update labels
       fetchProduct();
     };
+    // Listen for currency rates updates to force re-render
+    const handleCurrencyRatesUpdate = () => {
+      // Force re-render by updating currency state
+      setCurrency(getStoredCurrency());
+    };
     window.addEventListener('currency-updated', handleCurrencyUpdate);
     window.addEventListener('language-updated', handleLanguageUpdate);
+    window.addEventListener('currency-rates-updated', handleCurrencyRatesUpdate);
     return () => {
       window.removeEventListener('currency-updated', handleCurrencyUpdate);
       window.removeEventListener('language-updated', handleLanguageUpdate);
+      window.removeEventListener('currency-rates-updated', handleCurrencyRatesUpdate);
     };
   }, [slug, variantIdFromUrl, router, fetchProduct]);
 
