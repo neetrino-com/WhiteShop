@@ -745,6 +745,13 @@ function AddProductPageContent() {
           setNewCategoryName('');
           setNewCategoryRequiresSizes(false);
           
+          // Store product variants temporarily to convert after attributes are loaded
+          // We'll convert them in a separate useEffect that waits for attributes
+          if (product.variants && product.variants.length > 0) {
+            // Store product data for later conversion
+            (window as any).__productVariantsToConvert = product.variants;
+          }
+          
           console.log('✅ [ADMIN] Product loaded for edit');
         } catch (err: any) {
           console.error('❌ [ADMIN] Error loading product:', err);
@@ -758,6 +765,205 @@ function AddProductPageContent() {
       loadProduct();
     }
   }, [productId, isLoggedIn, isAdmin, router, attributes]);
+
+  // Convert product variants to generatedVariants format after attributes are loaded
+  useEffect(() => {
+    if (productId && attributes.length > 0 && (window as any).__productVariantsToConvert) {
+      const productVariants = (window as any).__productVariantsToConvert;
+      console.log('🔄 [ADMIN] Converting product variants to generatedVariants format:', {
+        variantsCount: productVariants.length,
+        attributesCount: attributes.length,
+        firstVariant: productVariants[0],
+      });
+      
+      // Collect all unique attribute IDs and value IDs from all variants
+      const attributeIdsSet = new Set<string>();
+      const attributeValueIdsMap: Record<string, string[]> = {};
+      
+      // First pass: collect all attributes and their values from all variants
+      productVariants.forEach((variant: any) => {
+        if (variant.options && Array.isArray(variant.options)) {
+          variant.options.forEach((opt: any) => {
+            // Try to get attributeId and valueId directly or from attributeValue relation
+            let attributeId = opt.attributeId;
+            let valueId = opt.valueId;
+            
+            // If not directly available, try to get from attributeValue relation
+            if (!attributeId && opt.attributeValue) {
+              attributeId = opt.attributeValue.attributeId || opt.attributeValue.attribute?.id;
+            }
+            if (!valueId && opt.attributeValue) {
+              valueId = opt.attributeValue.id;
+            }
+            
+            if (attributeId && valueId) {
+              attributeIdsSet.add(attributeId);
+              
+              if (!attributeValueIdsMap[attributeId]) {
+                attributeValueIdsMap[attributeId] = [];
+              }
+              if (!attributeValueIdsMap[attributeId].includes(valueId)) {
+                attributeValueIdsMap[attributeId].push(valueId);
+              }
+            }
+          });
+        }
+      });
+      
+      // Set selected attributes for variants
+      if (attributeIdsSet.size > 0) {
+        setSelectedAttributesForVariants(attributeIdsSet);
+      }
+      
+      // Set selected attribute value IDs (all unique values from all variants)
+      // This ensures all values are available for selection in the UI
+      if (Object.keys(attributeValueIdsMap).length > 0) {
+        setSelectedAttributeValueIds(attributeValueIdsMap);
+      }
+      
+      // Group variants: combine variants that share the same attribute structure
+      // but have different values, so all values appear in one cell per attribute
+      const variantGroups = new Map<string, Array<{
+        id: string;
+        selectedValueIds: string[];
+        price: string;
+        compareAtPrice: string;
+        stock: string;
+        sku: string;
+        image: string | null;
+      }>>();
+      
+      productVariants.forEach((variant: any, variantIndex: number) => {
+        const selectedValueIds: string[] = [];
+        const variantAttributeIds: string[] = [];
+        
+        // Collect all valueIds from variant options
+        if (variant.options && Array.isArray(variant.options)) {
+          variant.options.forEach((opt: any) => {
+            // Try to get attributeId and valueId directly or from attributeValue relation
+            let attributeId = opt.attributeId;
+            let valueId = opt.valueId;
+            
+            // If not directly available, try to get from attributeValue relation
+            if (!attributeId && opt.attributeValue) {
+              attributeId = opt.attributeValue.attributeId || opt.attributeValue.attribute?.id || opt.attributeValue.attributeId;
+            }
+            if (!valueId && opt.attributeValue) {
+              valueId = opt.attributeValue.id || opt.attributeValue.valueId;
+            }
+            
+            // Additional fallback: try to find attribute by key in attributes array
+            if (!attributeId && opt.attributeKey) {
+              const foundAttr = attributes.find(a => a.key === opt.attributeKey);
+              if (foundAttr) {
+                attributeId = foundAttr.id;
+              }
+            }
+            
+            // Additional fallback: try to find value by value string in attributes
+            if (attributeId && !valueId && opt.value) {
+              const foundAttr = attributes.find(a => a.id === attributeId);
+              if (foundAttr) {
+                const foundValue = foundAttr.values.find(v => v.value === opt.value || v.label === opt.value);
+                if (foundValue) {
+                  valueId = foundValue.id;
+                }
+              }
+            }
+            
+            if (attributeId) {
+              if (!variantAttributeIds.includes(attributeId)) {
+                variantAttributeIds.push(attributeId);
+              }
+              if (valueId) {
+                selectedValueIds.push(valueId);
+              }
+            }
+          });
+        }
+        
+        // Group variants by their attribute structure (which attributes they use)
+        // Variants with the same attributes will be combined to show all values in one cell
+        const groupKey = variantAttributeIds.sort().join('|');
+        
+        if (!variantGroups.has(groupKey)) {
+          variantGroups.set(groupKey, []);
+        }
+        
+        variantGroups.get(groupKey)!.push({
+          id: variant.id || `variant-${Date.now()}-${Math.random()}`,
+          selectedValueIds,
+          price: variant.price !== undefined && variant.price !== null ? String(variant.price) : '0.00',
+          compareAtPrice: variant.compareAtPrice !== undefined && variant.compareAtPrice !== null ? String(variant.compareAtPrice) : '0.00',
+          stock: variant.stock !== undefined && variant.stock !== null ? String(variant.stock) : '0',
+          sku: variant.sku || '',
+          image: variant.imageUrl || null,
+        });
+      });
+      
+      // Convert grouped variants to generatedVariants format
+      // For each group, create a variant that combines all value IDs from all variants in that group
+      // This ensures all values for each attribute are shown in one cell
+      const convertedVariants: Array<{
+        id: string;
+        selectedValueIds: string[];
+        price: string;
+        compareAtPrice: string;
+        stock: string;
+        sku: string;
+        image: string | null;
+      }> = [];
+      
+      variantGroups.forEach((groupVariants, groupKey) => {
+        // Collect all unique value IDs from all variants in this group
+        // This combines all values for each attribute into one variant row
+        const allValueIdsInGroup = new Set<string>();
+        groupVariants.forEach(v => {
+          v.selectedValueIds.forEach(id => allValueIdsInGroup.add(id));
+        });
+        
+        // Use the first variant's data as base (price, stock, SKU, image)
+        // But include all value IDs so all values show in one cell per attribute
+        const baseVariant = groupVariants[0];
+        
+        convertedVariants.push({
+          id: baseVariant.id,
+          selectedValueIds: Array.from(allValueIdsInGroup), // All values from all variants in this group
+          price: baseVariant.price,
+          compareAtPrice: baseVariant.compareAtPrice,
+          stock: baseVariant.stock,
+          sku: baseVariant.sku,
+          image: baseVariant.image,
+        });
+      });
+      
+      if (convertedVariants.length > 0) {
+        setGeneratedVariants(convertedVariants);
+        console.log('✅ [ADMIN] Converted product variants to generatedVariants:', {
+          totalVariants: convertedVariants.length,
+          totalGroups: variantGroups.size,
+          totalOriginalVariants: productVariants.length,
+          attributeValueIdsMap,
+          convertedVariants: convertedVariants.map(v => ({
+            id: v.id,
+            valueIdsCount: v.selectedValueIds.length,
+            price: v.price,
+            stock: v.stock,
+            sku: v.sku,
+          })),
+        });
+        // Clear the temporary storage
+        delete (window as any).__productVariantsToConvert;
+      } else {
+        console.warn('⚠️ [ADMIN] No variants converted. Check variant options structure:', {
+          variantsCount: productVariants.length,
+          firstVariantOptions: productVariants[0]?.options,
+        });
+      }
+    } else if (productId && attributes.length > 0) {
+      console.log('ℹ️ [ADMIN] Waiting for variants to convert. Attributes loaded:', attributes.length);
+    }
+  }, [productId, attributes]);
 
   const generateSlug = (title: string) => {
     return title
@@ -868,14 +1074,24 @@ function AddProductPageContent() {
   // Update variants when attributes or values change
   // NEW LOGIC: Generate variants when at least one attribute is selected (even without values)
   useEffect(() => {
+    // In edit mode, don't auto-generate variants if we're still loading or have already loaded variants
+    // This prevents clearing variants that were loaded from the product
+    if (isEditMode && productId && (window as any).__productVariantsToConvert) {
+      // Still loading variants, don't generate yet
+      return;
+    }
+    
     if (selectedAttributesForVariants.size > 0) {
       // Generate variants for all selected attributes, even if no values selected yet
       generateVariantsFromAttributes();
     } else {
-      setGeneratedVariants([]);
+      // Only clear variants if not in edit mode (to preserve loaded variants)
+      if (!isEditMode) {
+        setGeneratedVariants([]);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAttributesForVariants, selectedAttributeValueIds, attributes, formData.slug, formData.title]);
+  }, [selectedAttributesForVariants, selectedAttributeValueIds, attributes, formData.slug, formData.title, isEditMode, productId]);
 
   // Apply value to all variants
   const applyToAllVariants = (field: 'price' | 'compareAtPrice' | 'stock' | 'sku', value: string) => {
@@ -3074,131 +3290,6 @@ function AddProductPageContent() {
               )}
             </div>
 
-            {/* Product Variants Display */}
-            {formData.variants.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-gray-900">{t('admin.products.add.productVariants')}</h2>
-                  <span className="text-sm text-gray-500">
-                    {t('admin.products.add.variantsCreated').replace('{count}', formData.variants.length.toString())}
-                  </span>
-                </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
-                  {formData.variants.map((variant, variantIndex) => (
-                    <div key={variant.id} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-medium text-gray-900">
-                          {t('admin.products.add.variantNumber').replace('{index}', (variantIndex + 1).toString())}
-                        </h3>
-                        <div className="text-sm text-gray-600">
-                          {variant.sku && <span>{t('admin.products.add.sku')} {variant.sku}</span>}
-                        </div>
-                      </div>
-                      {variant.colors && variant.colors.length > 0 ? (
-                        <div className="space-y-4">
-                          {variant.colors.map((colorData, colorIndex) => {
-                            // Get color attribute value to access colors array
-                            const colorAttributeValue = getColorAttribute()?.values.find(v => v.value === colorData.colorValue);
-                            const attributeColors = colorAttributeValue?.colors || [];
-                            
-                            // Use first color from attribute colors array if available, otherwise use colorHex from label
-                            const primaryColorHex = attributeColors.length > 0 
-                              ? attributeColors[0] 
-                              : getColorHex(colorData.colorLabel);
-                            
-                            return (
-                              <div key={colorIndex} className="border border-gray-200 rounded-lg p-4 bg-white">
-                                <div className="flex items-center gap-3 mb-3">
-                                  {/* Show color swatches from attribute value if available */}
-                                  {attributeColors.length > 0 ? (
-                                    <div className="flex items-center gap-1">
-                                      {attributeColors.map((colorHex, idx) => (
-                                        <span
-                                          key={idx}
-                                          className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm"
-                                          style={{ backgroundColor: colorHex }}
-                                          title={colorHex}
-                                        />
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <span
-                                      className="inline-block w-6 h-6 rounded-full border-2 border-gray-300 shadow-sm"
-                                      style={{ backgroundColor: primaryColorHex }}
-                                    />
-                                  )}
-                                  <span className="text-base font-semibold text-gray-900">
-                                    {colorData.colorLabel}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                                  {colorData.price && (
-                                    <div>
-                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.price')}</label>
-                                      <div className="text-sm font-medium text-gray-900">{colorData.price}</div>
-                                    </div>
-                                  )}
-                                  {colorData.stock && (
-                                    <div>
-                                      <label className="block text-xs text-gray-500 mb-1">{t('admin.products.add.stock')}</label>
-                                      <div className="text-sm font-medium text-gray-900">{colorData.stock}</div>
-                                    </div>
-                                  )}
-                                </div>
-                                {colorData.sizes && colorData.sizes.length > 0 && (
-                                  <div>
-                                    <label className="block text-xs text-gray-500 mb-2">{t('admin.products.add.sizesAndStock')}</label>
-                                    <div className="flex flex-wrap gap-2">
-                                      {colorData.sizes.map((sizeValue) => {
-                                        const sizeLabel = getSizeAttribute()?.values.find(v => v.value === sizeValue)?.label || sizeValue;
-                                        const sizeStock = colorData.sizeStocks?.[sizeValue] || '0';
-                                        return (
-                                          <div key={sizeValue} className="px-3 py-1 bg-blue-50 border border-blue-200 rounded text-sm">
-                                            <span className="font-medium text-gray-900">{sizeLabel}</span>
-                                            {sizeStock && <span className="text-gray-600 ml-2">({sizeStock})</span>}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                )}
-                                {(() => {
-                                  // Get attribute value imageUrl if not already in images
-                                  const attributeImageUrl = colorAttributeValue?.imageUrl;
-                                  const allImages = [...(colorData.images || [])];
-                                  if (attributeImageUrl && !allImages.includes(attributeImageUrl)) {
-                                    allImages.unshift(attributeImageUrl); // Add attribute image first
-                                  }
-                                  
-                                  return allImages.length > 0 ? (
-                                    <div className="mt-3">
-                                      <label className="block text-xs text-gray-500 mb-2">{t('admin.products.add.images')}</label>
-                                      <div className="flex gap-2 flex-wrap">
-                                        {allImages.map((img, imgIndex) => (
-                                          <img
-                                            key={imgIndex}
-                                            src={img}
-                                            alt={`${colorData.colorLabel} ${imgIndex + 1}`}
-                                            className="w-20 h-20 object-cover rounded border border-gray-300"
-                                          />
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ) : null;
-                                })()}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-gray-500">{t('admin.products.add.noColorsAdded')}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Select Attributes for Variants */}
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('admin.products.add.selectAttributesForVariants')}</h2>
@@ -3352,7 +3443,8 @@ function AddProductPageContent() {
             </div>
 
             {/* New Multi-Attribute Variant Builder */}
-            {selectedAttributesForVariants.size > 0 && (
+            {/* Show in edit mode if variants are loaded, or if attributes are selected */}
+            {((isEditMode && generatedVariants.length > 0) || selectedAttributesForVariants.size > 0) && (
               <div>
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('admin.products.add.variantBuilder') || 'Տարբերակների կառուցիչ'}</h2>
                 <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
@@ -3436,14 +3528,35 @@ function AddProductPageContent() {
                         <table className="w-full divide-y divide-gray-200 bg-white">
                           <thead className="bg-gray-50">
                             <tr>
-                              {Array.from(selectedAttributesForVariants).map((attributeId) => {
-                                const attribute = attributes.find(a => a.id === attributeId);
-                                return attribute ? (
-                                  <th key={attributeId} className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {attribute.name}
-                                  </th>
-                                ) : null;
-                              })}
+                              {/* In edit mode, if no attributes selected but variants exist, extract attributes from variants */}
+                              {(() => {
+                                const attributesToShow = selectedAttributesForVariants.size > 0 
+                                  ? Array.from(selectedAttributesForVariants)
+                                  : (isEditMode && generatedVariants.length > 0
+                                      ? (() => {
+                                          // Extract unique attribute IDs from variants
+                                          const attrIds = new Set<string>();
+                                          generatedVariants.forEach(variant => {
+                                            variant.selectedValueIds.forEach(valueId => {
+                                              const attr = attributes.find(a => 
+                                                a.values.some(v => v.id === valueId)
+                                              );
+                                              if (attr) attrIds.add(attr.id);
+                                            });
+                                          });
+                                          return Array.from(attrIds);
+                                        })()
+                                      : []);
+                                
+                                return attributesToShow.map((attributeId) => {
+                                  const attribute = attributes.find(a => a.id === attributeId);
+                                  return attribute ? (
+                                    <th key={attributeId} className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      {attribute.name}
+                                    </th>
+                                  ) : null;
+                                });
+                              })()}
                               <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 {t('admin.products.add.price')}
                               </th>
@@ -3465,9 +3578,27 @@ function AddProductPageContent() {
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                            {generatedVariants.length > 0 && generatedVariants.map((variant) => (
+                            {generatedVariants.length > 0 && generatedVariants.map((variant) => {
+                              // Get attributes to show for this variant
+                              const attributesToShow = selectedAttributesForVariants.size > 0 
+                                ? Array.from(selectedAttributesForVariants)
+                                : (isEditMode
+                                    ? (() => {
+                                        // Extract unique attribute IDs from this variant's values
+                                        const attrIds = new Set<string>();
+                                        variant.selectedValueIds.forEach(valueId => {
+                                          const attr = attributes.find(a => 
+                                            a.values.some(v => v.id === valueId)
+                                          );
+                                          if (attr) attrIds.add(attr.id);
+                                        });
+                                        return Array.from(attrIds);
+                                      })()
+                                    : []);
+                              
+                              return (
                               <tr key={variant.id} className="hover:bg-gray-50">
-                                {Array.from(selectedAttributesForVariants).map((attributeId) => {
+                                {attributesToShow.map((attributeId) => {
                                   const attribute = attributes.find(a => a.id === attributeId);
                                   if (!attribute) return null;
                                   
@@ -3663,7 +3794,8 @@ function AddProductPageContent() {
                                   </button>
                                 </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
