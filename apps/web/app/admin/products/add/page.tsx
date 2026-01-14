@@ -2717,29 +2717,122 @@ function AddProductPageContent() {
         attributeIds: attributeIds.length > 0 ? attributeIds : undefined,
       };
 
-      // Add product images and media
-      const finalMedia: string[] = [];
+      // Helper function to check if image is base64
+      const isBase64Image = (url: string): boolean => {
+        return url.startsWith('data:image/');
+      };
+
+      // Helper function to upload base64 images and get URLs
+      const uploadBase64Images = async (images: string[]): Promise<string[]> => {
+        // Filter base64 images
+        const base64Images = images.filter(isBase64Image);
+        
+        if (base64Images.length === 0) {
+          // No base64 images, return as is
+          return images;
+        }
+
+        console.log('📤 [ADMIN] Uploading base64 images:', base64Images.length);
+        
+        try {
+          // Upload base64 images to get URLs
+          const uploadResponse = await apiClient.post<{ urls: string[] }>(
+            '/api/v1/admin/products/upload-images',
+            { images: base64Images }
+          );
+          
+          console.log('✅ [ADMIN] Images uploaded, received URLs:', uploadResponse.urls.length);
+          
+          // Replace base64 images with URLs
+          const urlMap = new Map<string, string>();
+          base64Images.forEach((base64, index) => {
+            urlMap.set(base64, uploadResponse.urls[index]);
+          });
+          
+          // Replace base64 with URLs in the original array
+          return images.map(img => urlMap.get(img) || img);
+        } catch (uploadError: any) {
+          console.error('❌ [ADMIN] Error uploading images:', uploadError);
+          // If upload fails, continue with base64 (may cause 413 error, but at least we tried)
+          throw new Error(`Failed to upload images: ${uploadError?.data?.detail || uploadError?.message || 'Unknown error'}`);
+        }
+      };
+
+      // Collect all images that need to be uploaded (product images + variant images)
+      const allImages: string[] = [];
       
       // Use imageUrls array if available, otherwise fall back to mainProductImage
       if (formData.imageUrls.length > 0) {
-        // Add featured image first (main image)
-        if (formData.imageUrls[formData.featuredImageIndex]) {
-          finalMedia.push(formData.imageUrls[formData.featuredImageIndex]);
-        }
-        // Add other images
-        formData.imageUrls.forEach((url, index) => {
-          if (index !== formData.featuredImageIndex && url) {
-            finalMedia.push(url);
-          }
-        });
+        allImages.push(...formData.imageUrls.filter(Boolean));
       } else if (formData.mainProductImage) {
-        // Fallback to legacy mainProductImage
-        finalMedia.push(formData.mainProductImage);
+        allImages.push(formData.mainProductImage);
       }
       
       // Add other media (extract URLs from media objects)
       if (media.length > 0) {
-        finalMedia.push(...media.map(m => m.url));
+        allImages.push(...media.map(m => m.url).filter(Boolean));
+      }
+
+      // Collect variant images
+      const variantImages: string[] = [];
+      variants.forEach(variant => {
+        if (variant.imageUrl) {
+          // imageUrl can be comma-separated string
+          const imageUrls = variant.imageUrl.split(',').map(url => url.trim()).filter(Boolean);
+          variantImages.push(...imageUrls);
+        }
+      });
+
+      // Combine all images
+      const allImagesToUpload = [...allImages, ...variantImages];
+
+      // Upload base64 images if any
+      let processedImages: string[] = [];
+      let processedVariantImages: string[] = [];
+      if (allImagesToUpload.length > 0) {
+        const allProcessed = await uploadBase64Images(allImagesToUpload);
+        processedImages = allProcessed.slice(0, allImages.length);
+        processedVariantImages = allProcessed.slice(allImages.length);
+      }
+
+      // Update variants with processed images
+      let variantImageIndex = 0;
+      variants.forEach(variant => {
+        if (variant.imageUrl) {
+          const imageUrls = variant.imageUrl.split(',').map(url => url.trim()).filter(Boolean);
+          const processedUrls = processedVariantImages.slice(variantImageIndex, variantImageIndex + imageUrls.length);
+          variant.imageUrl = processedUrls.join(',');
+          variantImageIndex += imageUrls.length;
+        }
+      });
+
+      // Build final media array with proper order
+      const finalMedia: string[] = [];
+      
+      if (formData.imageUrls.length > 0) {
+        // Map processed images back to imageUrls
+        const processedImageUrls = processedImages.slice(0, formData.imageUrls.length);
+        
+        // Add featured image first (main image)
+        if (processedImageUrls[formData.featuredImageIndex]) {
+          finalMedia.push(processedImageUrls[formData.featuredImageIndex]);
+        }
+        // Add other images
+        processedImageUrls.forEach((url, index) => {
+          if (index !== formData.featuredImageIndex && url) {
+            finalMedia.push(url);
+          }
+        });
+      } else if (formData.mainProductImage && processedImages.length > 0) {
+        // Fallback to legacy mainProductImage
+        finalMedia.push(processedImages[0]);
+      }
+      
+      // Add other media (from media array)
+      if (media.length > 0) {
+        const mediaStartIndex = formData.imageUrls.length || (formData.mainProductImage ? 1 : 0);
+        const mediaImages = processedImages.slice(mediaStartIndex);
+        finalMedia.push(...mediaImages.filter(Boolean));
       }
       
       if (finalMedia.length > 0) {
@@ -2748,9 +2841,9 @@ function AddProductPageContent() {
       
       // Also add mainProductImage as separate field for easier access
       // Use featured image from imageUrls if available
-      const mainImage = formData.imageUrls.length > 0 && formData.imageUrls[formData.featuredImageIndex]
-        ? formData.imageUrls[formData.featuredImageIndex]
-        : formData.mainProductImage;
+      const mainImage = formData.imageUrls.length > 0 && processedImages[formData.featuredImageIndex]
+        ? processedImages[formData.featuredImageIndex]
+        : (processedImages.length > 0 ? processedImages[0] : formData.mainProductImage);
       if (mainImage) {
         payload.mainProductImage = mainImage;
       }
