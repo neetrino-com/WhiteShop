@@ -1024,6 +1024,7 @@ class AdminService {
         price: variant?.price || 0,
         stock: variant?.stock || 0,
         discountPercent: product.discountPercent || 0, // Include discountPercent
+        compareAtPrice: variant?.compareAtPrice || null, // Include compareAtPrice for showing original price
         colorStocks: [], // Can be enhanced later
         image,
         createdAt: product.createdAt.toISOString(),

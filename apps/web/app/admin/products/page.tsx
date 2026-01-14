@@ -16,6 +16,8 @@ interface Product {
   featured?: boolean;
   price: number;
   stock: number;
+  discountPercent?: number;
+  compareAtPrice?: number | null;
   colorStocks?: Array<{
     color: string;
     stock: number;
@@ -896,12 +898,28 @@ export default function ProductsPage() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {new Intl.NumberFormat('en-US', {
-                              style: 'currency',
-                              currency: 'USD',
-                              minimumFractionDigits: 0,
-                            }).format(product.price)}
+                          <div className="flex flex-col">
+                            <div className="text-sm font-medium text-gray-900">
+                              {new Intl.NumberFormat('en-US', {
+                                style: 'currency',
+                                currency: 'USD',
+                                minimumFractionDigits: 0,
+                              }).format(product.price)}
+                            </div>
+                            {(product.compareAtPrice && product.compareAtPrice > product.price) || 
+                             (product.discountPercent && product.discountPercent > 0) ? (
+                              <div className="text-xs text-gray-500 line-through mt-0.5">
+                                {new Intl.NumberFormat('en-US', {
+                                  style: 'currency',
+                                  currency: 'USD',
+                                  minimumFractionDigits: 0,
+                                }).format(
+                                  product.compareAtPrice && product.compareAtPrice > product.price
+                                    ? product.compareAtPrice
+                                    : product.price / (1 - (product.discountPercent || 0) / 100)
+                                )}
+                              </div>
+                            ) : null}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
