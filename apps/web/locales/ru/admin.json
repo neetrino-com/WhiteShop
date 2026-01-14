@@ -177,7 +177,7 @@
     "updateCategory": "Обновить категорию",
     "categoryTitle": "Название категории",
     "categoryTitlePlaceholder": "Введите название категории",
-    "parentCategory": " категория",
+    "parentCategory": "категория",
     "rootCategory": "Нет (Корневая категория)",
     "requiresSizes": "Эта категория требует размеры (например, одежда, обувь)",
     "titleRequired": "Пожалуйста, введите название категории",
