@@ -1776,26 +1776,25 @@ class AdminService {
 
         // 4. Update variants
         if (data.variants !== undefined) {
-          // Get existing variants to handle related items
+          // Get existing variants with their IDs and SKUs for matching
           const existingVariants = await tx.productVariant.findMany({
             where: { productId },
-            select: { id: true },
+            select: { id: true, sku: true },
           });
+          const existingVariantIds = new Set<string>(existingVariants.map((v: { id: string }) => v.id));
+          // Create a map of SKU -> variant ID for quick lookup
+          const existingSkuMap = new Map<string, string>();
+          existingVariants.forEach((v: { id: string; sku: string | null }) => {
+            if (v.sku) {
+              existingSkuMap.set(v.sku.trim().toLowerCase(), v.id);
+            }
+          });
+          const incomingVariantIds = new Set<string>();
           
-          if (existingVariants.length > 0) {
-            const variantIds = existingVariants.map((v: { id: string }) => v.id);
-            await tx.cartItem.deleteMany({ where: { variantId: { in: variantIds } } });
-            await tx.orderItem.updateMany({
-              where: { variantId: { in: variantIds } },
-              data: { variantId: null },
-            });
-          }
+          const locale = data.locale || "en";
           
-          await tx.productVariant.deleteMany({ where: { productId } });
-
-          // Create new variants
+          // Process each variant: update if exists, create if new
           if (data.variants.length > 0) {
-            const locale = data.locale || "en";
             for (const variant of data.variants) {
               const options: any[] = [];
               const attributesMap: Record<string, Array<{ valueId: string; value: string; attributeKey: string }>> = {};
@@ -1899,22 +1898,128 @@ class AdminService {
               // Convert attributesMap to JSONB format
               const attributesJson = Object.keys(attributesMap).length > 0 ? attributesMap : null;
 
-              await tx.productVariant.create({
-                data: {
-                  productId,
-                  sku: variant.sku || undefined,
-                  price,
-                  compareAtPrice,
-                  stock: isNaN(stock) ? 0 : stock,
-                  imageUrl: variant.imageUrl || undefined,
-                  published: variant.published !== false,
-                  attributes: attributesJson, // JSONB column
-                  options: {
-                    create: options,
+              // Check if variant should be updated or created
+              // First check by ID if provided
+              let variantToUpdate = null;
+              let variantIdToUse: string | null = null;
+              
+              if (variant.id && existingVariantIds.has(variant.id)) {
+                variantToUpdate = await tx.productVariant.findUnique({
+                  where: { id: variant.id },
+                });
+                variantIdToUse = variant.id;
+                console.log(`🔍 [ADMIN SERVICE] Variant lookup by ID ${variant.id}:`, variantToUpdate ? 'found' : 'not found');
+              }
+              
+              // If not found by ID, try to find by SKU using the SKU map (faster than DB query)
+              if (!variantToUpdate && variant.sku) {
+                const skuValue = variant.sku.trim();
+                const skuKey = skuValue.toLowerCase();
+                const matchedVariantId = existingSkuMap.get(skuKey);
+                
+                if (matchedVariantId) {
+                  variantToUpdate = await tx.productVariant.findUnique({
+                    where: { id: matchedVariantId },
+                  });
+                  variantIdToUse = matchedVariantId;
+                  console.log(`🔍 [ADMIN SERVICE] Variant lookup by SKU "${skuValue}": found variant ID ${matchedVariantId}`);
+                } else {
+                  // Check if SKU exists globally (might be from another product)
+                  const existingSkuVariant = await tx.productVariant.findFirst({
+                    where: {
+                      sku: skuValue,
+                    },
+                  });
+                  
+                  if (existingSkuVariant) {
+                    console.warn(`⚠️ [ADMIN SERVICE] SKU "${skuValue}" already exists in product ${existingSkuVariant.productId}, but not in current product ${productId}`);
+                    // Don't use this variant, as it belongs to another product
+                    throw new Error(`SKU "${skuValue}" already exists in another product. Please use a unique SKU.`);
+                  }
+                  
+                  console.log(`🔍 [ADMIN SERVICE] Variant lookup by SKU "${skuValue}": not found in current product`);
+                }
+              }
+              
+              if (variantToUpdate && variantIdToUse) {
+                // Update existing variant
+                incomingVariantIds.add(variantIdToUse);
+                
+                // Delete old options and create new ones
+                await tx.productVariantOption.deleteMany({
+                  where: { variantId: variantToUpdate.id },
+                });
+                
+                await tx.productVariant.update({
+                  where: { id: variantIdToUse },
+                  data: {
+                    sku: variant.sku ? variant.sku.trim() : undefined,
+                    price,
+                    compareAtPrice,
+                    stock: isNaN(stock) ? 0 : stock,
+                    imageUrl: variant.imageUrl || undefined,
+                    published: variant.published !== false,
+                    attributes: attributesJson,
+                    options: {
+                      create: options,
+                    },
                   },
-                },
-              });
+                });
+                
+                console.log(`✅ [ADMIN SERVICE] Updated variant: ${variantIdToUse} (found by ${variant.id ? 'ID' : 'SKU'})`);
+              } else {
+                // Create new variant
+                // Double-check that SKU doesn't already exist (safety check)
+                if (variant.sku) {
+                  const skuValue = variant.sku.trim();
+                  const existingSkuCheck = await tx.productVariant.findFirst({
+                    where: {
+                      sku: skuValue,
+                    },
+                  });
+                  
+                  if (existingSkuCheck) {
+                    console.error(`❌ [ADMIN SERVICE] SKU "${skuValue}" already exists! Variant ID: ${existingSkuCheck.id}, Product ID: ${existingSkuCheck.productId}`);
+                    throw new Error(`SKU "${skuValue}" already exists. Cannot create duplicate variant.`);
+                  }
+                }
+                
+                console.log(`🆕 [ADMIN SERVICE] Creating new variant with SKU: ${variant.sku || 'none'}`);
+                const newVariant = await tx.productVariant.create({
+                  data: {
+                    productId,
+                    sku: variant.sku ? variant.sku.trim() : undefined,
+                    price,
+                    compareAtPrice,
+                    stock: isNaN(stock) ? 0 : stock,
+                    imageUrl: variant.imageUrl || undefined,
+                    published: variant.published !== false,
+                    attributes: attributesJson,
+                    options: {
+                      create: options,
+                    },
+                  },
+                });
+                
+                if (newVariant.id) {
+                  incomingVariantIds.add(newVariant.id);
+                }
+                
+                console.log(`✅ [ADMIN SERVICE] Created new variant: ${newVariant.id}`);
+              }
             }
+          }
+          
+          // Delete variants that are no longer in the list
+          const variantsToDelete = Array.from(existingVariantIds).filter(id => !incomingVariantIds.has(id));
+          if (variantsToDelete.length > 0) {
+            await tx.productVariant.deleteMany({
+              where: {
+                id: { in: variantsToDelete },
+                productId,
+              },
+            });
+            console.log(`🗑️ [ADMIN SERVICE] Deleted ${variantsToDelete.length} variant(s):`, variantsToDelete);
           }
         }
 

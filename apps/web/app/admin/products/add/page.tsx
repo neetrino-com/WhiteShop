@@ -2265,9 +2265,9 @@ function AddProductPageContent() {
           }
           skuSetForConversion.add(finalSku);
           
-          // Create variant
+          // Create variant - preserve original ID if it exists (for edit mode)
           allNewVariants.push({
-            id: `variant-${Date.now()}-${variantIndex}-${Math.random()}`,
+            id: variant.id || `variant-${Date.now()}-${variantIndex}-${Math.random()}`,
             price: variant.price || '0',
             compareAtPrice: variant.compareAtPrice || '',
             sku: finalSku,
