@@ -695,8 +695,10 @@ class ProductsService {
         : null;
 
       // Get all unique colors from variants with imageUrl and colors hex (support both new and old format)
+      // IMPORTANT: Only collect colors that actually exist in variants
       const colorMap = new Map<string, { value: string; imageUrl?: string | null; colors?: string[] | null }>();
       variants.forEach((v: any) => {
+        // First, try to get color from variant.options
         const options = Array.isArray(v.options) ? v.options : [];
         const colorOption = options.find((opt: any) => {
           // Support both new format (AttributeValue) and old format (attributeKey/value)
@@ -705,6 +707,7 @@ class ProductsService {
           }
           return opt.attributeKey === "color";
         });
+        
         if (colorOption) {
           let colorValue = "";
           let imageUrl: string | null | undefined = null;
@@ -733,10 +736,30 @@ class ProductsService {
               });
             }
           }
+        } else if (v.attributes && typeof v.attributes === 'object' && v.attributes.color) {
+          // Fallback: check variant.attributes JSONB column if options don't have color
+          // This handles cases where colors are stored in JSONB but not in options
+          const colorAttributes = Array.isArray(v.attributes.color) ? v.attributes.color : [v.attributes.color];
+          colorAttributes.forEach((colorAttr: any) => {
+            const colorValue = colorAttr?.value || colorAttr;
+            if (colorValue && typeof colorValue === 'string') {
+              const normalizedValue = colorValue.trim().toLowerCase();
+              // Only add if not already in colorMap
+              if (!colorMap.has(normalizedValue)) {
+                colorMap.set(normalizedValue, {
+                  value: colorValue.trim(),
+                  imageUrl: null,
+                  colors: null,
+                });
+              }
+            }
+          });
         }
       });
       
       // Also check productAttributes for color attribute values with imageUrl and colors
+      // IMPORTANT: Only update colors that already exist in variants (already in colorMap)
+      // Do not add new colors that don't exist in variants
       if ((product as any).productAttributes && Array.isArray((product as any).productAttributes)) {
         (product as any).productAttributes.forEach((productAttr: any) => {
           if (productAttr.attribute?.key === 'color' && productAttr.attribute?.values) {
@@ -745,14 +768,18 @@ class ProductsService {
               const colorValue = translation?.label || attrValue.value || "";
               if (colorValue) {
                 const normalizedValue = colorValue.trim().toLowerCase();
-                // Update if we have imageUrl or colors hex
-                if (attrValue.imageUrl || attrValue.colors) {
+                // Only update if color already exists in colorMap (i.e., exists in variants)
+                // This ensures we only show colors that actually exist in product variants
+                if (colorMap.has(normalizedValue)) {
                   const existing = colorMap.get(normalizedValue);
-                  colorMap.set(normalizedValue, {
-                    value: colorValue.trim(),
-                    imageUrl: attrValue.imageUrl || existing?.imageUrl || null,
-                    colors: attrValue.colors || existing?.colors || null,
-                  });
+                  // Update with imageUrl and colors hex from productAttributes if available
+                  if (attrValue.imageUrl || attrValue.colors) {
+                    colorMap.set(normalizedValue, {
+                      value: colorValue.trim(),
+                      imageUrl: attrValue.imageUrl || existing?.imageUrl || null,
+                      colors: attrValue.colors || existing?.colors || null,
+                    });
+                  }
                 }
               }
             });
