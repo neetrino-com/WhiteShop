@@ -26,6 +26,8 @@
     "checkout": "Checkout",
     "profile": "Profile",
     "orders": "Orders",
+    "login": "Login",
+    "register": "Register",
     "about": "About Us",
     "contact": "Contact",
     "admin": "Admin",
