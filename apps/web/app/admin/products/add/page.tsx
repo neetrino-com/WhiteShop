@@ -13,6 +13,7 @@ import {
   smartSplitUrls,
   cleanImageUrls,
   separateMainAndVariantImages,
+  processImageFile,
 } from '../../../../lib/utils/image-utils';
 
 interface Brand {
@@ -1545,7 +1546,15 @@ function AddProductPageContent() {
           }
           
           console.log(`📸 [UPLOAD] Processing file ${index + 1}/${files.length}:`, file.name, `(${Math.round(file.size / 1024)}KB)`);
-          const base64 = await fileToBase64(file);
+          
+          // Process image with compression, EXIF orientation correction, and resize
+          const base64 = await processImageFile(file, {
+            maxSizeMB: 2,
+            maxWidthOrHeight: 1920,
+            useWebWorker: true,
+            fileType: 'image/jpeg',
+            initialQuality: 0.8
+          });
           
           if (base64 && base64.trim()) {
             console.log(`✅ [UPLOAD] Successfully processed file ${index + 1}/${files.length}:`, file.name);
@@ -1635,12 +1644,27 @@ function AddProductPageContent() {
     setImageUploadLoading(true);
     setImageUploadError(null);
     try {
-      const base64 = await fileToBase64(file);
+      console.log('🖼️ [VARIANT IMAGE] Processing variant image:', {
+        variantId,
+        fileName: file.name,
+        originalSize: `${Math.round(file.size / 1024)}KB`
+      });
+
+      // Process image with compression, EXIF orientation correction, and resize
+      const base64 = await processImageFile(file, {
+        maxSizeMB: 2,
+        maxWidthOrHeight: 1920,
+        useWebWorker: true,
+        fileType: 'image/jpeg',
+        initialQuality: 0.8
+      });
+
       setGeneratedVariants(prev => prev.map(v => 
         v.id === variantId ? { ...v, image: base64 } : v
       ));
-      console.log('✅ [VARIANT BUILDER] Variant image uploaded for variant:', variantId);
+      console.log('✅ [VARIANT BUILDER] Variant image uploaded and processed for variant:', variantId);
     } catch (error: any) {
+      console.error('❌ [VARIANT IMAGE] Error processing variant image:', error);
       setImageUploadError(error?.message || t('admin.products.add.failedToProcessImage'));
     } finally {
       setImageUploadLoading(false);
@@ -1674,14 +1698,27 @@ function AddProductPageContent() {
       console.log('📤 [ADMIN] Starting upload for color:', colorImageTarget.colorValue, 'Files:', imageFiles.length);
       
       const uploadedImages = await Promise.all(
-        imageFiles.map(async (file) => {
-          const base64 = await fileToBase64(file);
-          console.log('✅ [ADMIN] Image converted to base64, length:', base64.length);
+        imageFiles.map(async (file, index) => {
+          console.log(`🖼️ [COLOR IMAGE] Processing image ${index + 1}/${imageFiles.length}:`, {
+            fileName: file.name,
+            originalSize: `${Math.round(file.size / 1024)}KB`
+          });
+
+          // Process image with compression, EXIF orientation correction, and resize
+          const base64 = await processImageFile(file, {
+            maxSizeMB: 2,
+            maxWidthOrHeight: 1920,
+            useWebWorker: true,
+            fileType: 'image/jpeg',
+            initialQuality: 0.8
+          });
+
+          console.log(`✅ [COLOR IMAGE] Image ${index + 1}/${imageFiles.length} processed, base64 length:`, base64.length);
           return base64;
         })
       );
 
-      console.log('📥 [ADMIN] All images converted, adding to variant:', {
+      console.log('📥 [ADMIN] All images processed, adding to variant:', {
         variantId: colorImageTarget.variantId,
         colorValue: colorImageTarget.colorValue,
         imagesCount: uploadedImages.length
@@ -1691,6 +1728,7 @@ function AddProductPageContent() {
       console.log('✅ [ADMIN] Color images added to state:', uploadedImages.length);
     } catch (error: any) {
       console.error('❌ [ADMIN] Error uploading color images:', error);
+      setImageUploadError(error?.message || t('admin.products.add.failedToProcessImages'));
     } finally {
       setImageUploadLoading(false);
       if (event.target) {

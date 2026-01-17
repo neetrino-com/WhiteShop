@@ -2,6 +2,8 @@
  * Unified image URL utilities for consistent handling across the application
  */
 
+import imageCompression from 'browser-image-compression';
+
 /**
  * Validates if a URL is a valid image URL
  */
@@ -300,5 +302,78 @@ export function separateMainAndVariantImages(
     main: mainProcessed,
     variants: variantProcessed,
   };
+}
+
+/**
+ * Processes an image file with compression, EXIF orientation correction, and size optimization
+ * Automatically handles:
+ * - EXIF orientation (rotates image correctly)
+ * - Resize to max dimensions (1920x1920 by default)
+ * - Compression to reduce file size (maxSizeMB: 2MB by default)
+ * 
+ * @param file - The image file to process
+ * @param options - Processing options
+ * @returns Promise<string> - Base64 data URL of processed image
+ */
+export async function processImageFile(
+  file: File,
+  options?: {
+    maxSizeMB?: number; // Maximum file size in MB (default: 2)
+    maxWidthOrHeight?: number; // Maximum width or height in pixels (default: 1920)
+    useWebWorker?: boolean; // Use web worker for processing (default: true)
+    fileType?: string; // Output file type (default: 'image/jpeg')
+    initialQuality?: number; // Initial quality 0-1 (default: 0.8)
+  }
+): Promise<string> {
+  try {
+    console.log('🖼️ [IMAGE PROCESSING] Starting image processing:', {
+      fileName: file.name,
+      originalSize: `${Math.round(file.size / 1024)}KB`,
+      type: file.type
+    });
+
+    const {
+      maxSizeMB = 2,
+      maxWidthOrHeight = 1920,
+      useWebWorker = true,
+      fileType = 'image/jpeg',
+      initialQuality = 0.8
+    } = options || {};
+
+    // Process image with compression and EXIF orientation correction
+    // browser-image-compression automatically handles EXIF orientation
+    const compressedFile = await imageCompression(file, {
+      maxSizeMB,
+      maxWidthOrHeight,
+      useWebWorker,
+      fileType,
+      initialQuality,
+      // EXIF orientation is automatically handled by browser-image-compression
+    });
+
+    console.log('✅ [IMAGE PROCESSING] Image processed successfully:', {
+      originalSize: `${Math.round(file.size / 1024)}KB`,
+      compressedSize: `${Math.round(compressedFile.size / 1024)}KB`,
+      reduction: `${Math.round((1 - compressedFile.size / file.size) * 100)}%`
+    });
+
+    // Convert to base64
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        console.log('✅ [IMAGE PROCESSING] Image converted to base64, length:', result.length);
+        resolve(result);
+      };
+      reader.onerror = (error) => {
+        console.error('❌ [IMAGE PROCESSING] Error converting to base64:', error);
+        reject(new Error('Failed to convert image to base64'));
+      };
+      reader.readAsDataURL(compressedFile);
+    });
+  } catch (error: any) {
+    console.error('❌ [IMAGE PROCESSING] Error processing image:', error);
+    throw new Error(error?.message || 'Failed to process image');
+  }
 }
 

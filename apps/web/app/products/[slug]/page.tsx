@@ -1750,9 +1750,16 @@ export default function ProductPage({ params }: ProductPageProps) {
                               >
                                 {hasImage ? (
                                   <img 
-                                    src={g.imageUrl!} 
+                                    src={processedImageUrl!} 
                                     alt={g.label}
                                     className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      console.error(`❌ [COLOR IMAGE] Failed to load image for color "${g.value}":`, processedImageUrl);
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                    onLoad={() => {
+                                      console.log(`✅ [COLOR IMAGE] Successfully loaded image for color "${g.value}":`, processedImageUrl);
+                                    }}
                                   />
                                 ) : null}
                               </button>
@@ -1775,7 +1782,10 @@ export default function ProductPage({ params }: ProductPageProps) {
                           // IMPORTANT: Don't disable based on stock - show all sizes, even if stock is 0
                           // Stock is just informational, not a reason to hide the option
                           const isDisabled = false; // Always show all sizes
-                          const hasImage = g.imageUrl;
+                          
+                          // Process imageUrl to ensure it's in the correct format
+                          const processedImageUrl = g.imageUrl ? processImageUrl(g.imageUrl) : null;
+                          const hasImage = processedImageUrl && processedImageUrl.trim() !== '';
                           
                           // Dynamic sizing based on number of values
                           // Keep size consistent for 2 values, reduce for more
@@ -1809,9 +1819,16 @@ export default function ProductPage({ params }: ProductPageProps) {
                             >
                               {hasImage && (
                                 <img 
-                                  src={g.imageUrl!} 
+                                  src={processedImageUrl!} 
                                   alt={g.label}
                                   className={`${imageSizeClass} object-cover rounded border border-gray-300 flex-shrink-0`}
+                                  onError={(e) => {
+                                    console.error(`❌ [SIZE IMAGE] Failed to load image for size "${g.value}":`, processedImageUrl);
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                  onLoad={() => {
+                                    console.log(`✅ [SIZE IMAGE] Successfully loaded image for size "${g.value}":`, processedImageUrl);
+                                  }}
                                 />
                               )}
                               <div className="flex flex-col text-center">
@@ -1831,7 +1848,19 @@ export default function ProductPage({ params }: ProductPageProps) {
                           // IMPORTANT: Don't disable based on stock - show all attribute values, even if stock is 0
                           // Stock is just informational, not a reason to hide the option
                           const isDisabled = false; // Always show all attribute values
-                          const hasImage = g.imageUrl && g.imageUrl.trim() !== '';
+                          
+                          // Process imageUrl to ensure it's in the correct format
+                          const processedImageUrl = g.imageUrl ? processImageUrl(g.imageUrl) : null;
+                          const hasImage = processedImageUrl && processedImageUrl.trim() !== '';
+                          const hasColors = g.colors && Array.isArray(g.colors) && g.colors.length > 0;
+                          const colorHex = hasColors 
+                            ? g.colors[0] 
+                            : null;
+                          
+                          // Debug logging for image issues
+                          if (g.imageUrl && !hasImage) {
+                            console.warn(`⚠️ [ATTRIBUTE IMAGE] Failed to process imageUrl for attribute "${attrKey}" value "${g.value}":`, g.imageUrl);
+                          }
                           
                           // Dynamic sizing based on number of values
                           // Keep size consistent for 2 values, reduce for more
@@ -1874,15 +1903,25 @@ export default function ProductPage({ params }: ProductPageProps) {
                                     ? 'border-gray-200 opacity-60 hover:opacity-80'
                                     : 'border-gray-200 hover:border-gray-400'
                               }`}
+                              style={!hasImage && colorHex ? { backgroundColor: colorHex } : {}}
                             >
                               {hasImage ? (
                                 <img 
-                                  src={g.imageUrl!} 
+                                  src={processedImageUrl!} 
                                   alt={g.label}
                                   className={`${imageSizeClass} object-cover rounded border border-gray-300 flex-shrink-0`}
                                   onError={(e) => {
+                                    console.error(`❌ [ATTRIBUTE IMAGE] Failed to load image for attribute "${attrKey}" value "${g.value}":`, processedImageUrl);
                                     (e.target as HTMLImageElement).style.display = 'none';
                                   }}
+                                  onLoad={() => {
+                                    console.log(`✅ [ATTRIBUTE IMAGE] Successfully loaded image for attribute "${attrKey}" value "${g.value}":`, processedImageUrl);
+                                  }}
+                                />
+                              ) : hasColors && colorHex ? (
+                                <div 
+                                  className={`${imageSizeClass} rounded border border-gray-300 flex-shrink-0`}
+                                  style={{ backgroundColor: colorHex }}
                                 />
                               ) : null}
                               <span className={textSizeClass}>{getAttributeLabel(language, attrKey, g.value)}</span>

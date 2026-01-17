@@ -22,6 +22,7 @@
     "@shop/ui": "*",
     "@white-shop/db": "*",
     "bcryptjs": "^2.4.3",
+    "browser-image-compression": "^2.0.2",
     "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.555.0",
@@ -34,6 +35,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/browser-image-compression": "^1.0.1",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.10.0",
     "@types/react": "^18.3.0",
