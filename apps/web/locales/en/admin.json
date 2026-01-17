@@ -236,7 +236,7 @@
     "blocked": "blocked",
     "active": "active",
     "userBlocked": "User \"{name}\" is now blocked and cannot login!",
-    "userActive": "User \"{name}\" is now active and can login.",
+    "userActive": "User \"{name}\" is now active and Can login.",
     "errorUpdatingStatus": "Error updating user status: {message}",
     "selectedUsers": "Selected {count} users",
     "deleteSelected": "Delete selected",
